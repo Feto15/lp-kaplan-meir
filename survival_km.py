@@ -1,7 +1,7 @@
 import math
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -9,151 +9,150 @@ import requests
 from lifelines import KaplanMeierFitter
 
 
-# Konfigurasi sumber data Aerodrome subgraph (Base).
-# Wajib ganti SUBGRAPH_URL ke endpoint subgraph Aerodrome yang valid.
-# Contoh (isi sesuai dokumentasi Aerodrome/Base):
-# SUBGRAPH_URL = "https://api.studio.thegraph.com/query/<project-id>/aerodrome-base/version/latest"
-SUBGRAPH_URL = os.getenv("AERODROME_SUBGRAPH_URL", "").strip()
-# Pair address Aerodrome WETH/USDbC di Base (lowercase).
+# Konfigurasi sumber data via RPC Base (gratis).
+RPC_URL = os.getenv("AERODROME_RPC_URL", "https://mainnet.base.org").strip()
+# Pair Aerodrome WETH/USDbC di Base.
 PAIR_ADDRESS = os.getenv(
     "AERODROME_PAIR_ADDRESS", "0xb4885bc63399bf5518b994c1d0c153334ee579d0"
 ).lower()
-# Token mana yang dipakai sebagai base harga (token0 atau token1).
-# Jika ingin harga WETH dalam USDbC dan WETH adalah token0, gunakan "token0Price".
-# Sesuaikan dengan schema subgraph (token0Price/token1Price).
-PRICE_FIELD = os.getenv("AERODROME_PRICE_FIELD", "token0Price")
+# Token asumsi (bisa dikonfirmasi via token0/token1).
+TOKEN0_DECIMALS = int(os.getenv("AERODROME_TOKEN0_DECIMALS", "18"))  # WETH
+TOKEN1_DECIMALS = int(os.getenv("AERODROME_TOKEN1_DECIMALS", "6"))   # USDbC
+# Target harga: WETH dalam USDbC => price = reserve1/reserve0 * 10^(dec0-dec1)
+
+# Estimasi block time Base (detik) untuk konversi waktu->block.
+BASE_BLOCK_TIME_SEC = float(os.getenv("BASE_BLOCK_TIME_SEC", "2"))
+# Berapa jam data yang diambil ke belakang dari block terbaru.
+LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "72"))
+# Interval sampling harga (detik).
+SAMPLE_INTERVAL_SEC = int(os.getenv("SAMPLE_INTERVAL_SEC", "300"))
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
 CSV_OUTPUT = "survival_eth_usdc.csv"
 
 
-def _require_subgraph_url() -> None:
-    if not SUBGRAPH_URL:
-        raise RuntimeError(
-            "SUBGRAPH_URL kosong. Set env AERODROME_SUBGRAPH_URL atau edit konstanta SUBGRAPH_URL."
-        )
-
-
-def _run_subgraph_query(query: str, variables: Dict, max_retries: int = 5) -> Dict:
-    """Execute GraphQL query with simple retry/backoff."""
-    _require_subgraph_url()
+def rpc_call(method: str, params: List, max_retries: int = 5) -> Dict:
+    """Minimal JSON-RPC call dengan retry sederhana (rate limit 429)."""
     headers = {
-        "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "survival-km-script/1.0",
+        "Accept": "application/json",
     }
+    payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(
-                SUBGRAPH_URL, json={"query": query, "variables": variables}, headers=headers, timeout=30
-            )
+            resp = requests.post(RPC_URL, headers=headers, json=payload, timeout=20)
             resp.raise_for_status()
             data = resp.json()
-            if "errors" in data:
-                raise RuntimeError(data["errors"])
-            return data["data"]
+            if "error" in data:
+                raise RuntimeError(data["error"])
+            return data["result"]
+        except requests.HTTPError as exc:  # type: ignore[attr-defined]
+            last_error = exc
+            status = getattr(exc.response, "status_code", None)
+            if status == 429 and attempt < max_retries:
+                time.sleep(1.5 ** (attempt - 1))
+                continue
+            raise
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt >= max_retries:
                 break
             time.sleep(1.5 ** (attempt - 1))
-    raise RuntimeError(f"Gagal query subgraph: {last_error}")
+    raise RuntimeError(f"RPC call failed after retries: {last_error}")
+
+
+def _hex_to_int(h: str) -> int:
+    return int(h, 16)
+
+
+def get_block(number: str) -> Dict:
+    return rpc_call("eth_getBlockByNumber", [number, False])
+
+
+def get_latest_block() -> Tuple[int, int]:
+    blk = get_block("latest")
+    num = _hex_to_int(blk["number"])
+    ts = _hex_to_int(blk["timestamp"])
+    return num, ts
+
+
+def find_block_for_timestamp(target_ts: int, latest_num: int, latest_ts: int) -> int:
+    """Approximate block number for a target timestamp using iterative adjustment."""
+    guess = max(0, int(latest_num - (latest_ts - target_ts) / BASE_BLOCK_TIME_SEC))
+    for _ in range(10):
+        blk = get_block(hex(guess))
+        blk_ts = _hex_to_int(blk["timestamp"])
+        diff = blk_ts - target_ts
+        if abs(diff) <= 30:
+            return guess
+        adjust = int(diff / BASE_BLOCK_TIME_SEC)
+        if adjust == 0:
+            adjust = 1 if diff > 0 else -1
+        guess = max(0, guess - adjust)
+    return guess
+
+
+def call_get_reserves(pair: str, block_num: int) -> Optional[Tuple[float, float]]:
+    """Call getReserves() at specific block."""
+    data = "0x0902f1ac"
+    params = [
+        {
+            "to": pair,
+            "data": data,
+        },
+        hex(block_num),
+    ]
+    res = rpc_call("eth_call", params)
+    if not res or res == "0x":
+        return None
+    # getReserves returns three uint112/uint32 packed: 32 bytes each
+    try:
+        reserve0 = int(res[2:66], 16)
+        reserve1 = int(res[66:130], 16)
+        return float(reserve0), float(reserve1)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def get_price_data(
     pair_address: str = PAIR_ADDRESS,
-    price_field: str = PRICE_FIELD,
-    max_pages: int = 20,
-    page_size: int = 500,
+    lookback_hours: int = LOOKBACK_HOURS,
+    sample_interval_sec: int = SAMPLE_INTERVAL_SEC,
 ) -> pd.DataFrame:
     """
-    Ambil data harga historis dari Aerodrome subgraph (Base).
-
-    Menggunakan entitas pairHourData (schema Solidly/Aerodrome) atau swap snapshot
-    bergantung ketersediaan field. Disini diasumsikan ada:
-      - pairHourDatas dengan field: periodStartUnix, token0Price, token1Price
+    Ambil data harga historis via RPC dengan sampling interval tetap.
+    Mengambil harga WETH/USDbC: price = reserve1/reserve0 * 10^(dec0-dec1).
     """
     pair_address = pair_address.lower()
-    field = price_field
+    latest_num, latest_ts = get_latest_block()
 
-    query = """
-    query ($pair: String!, $skip: Int!, $first: Int!) {
-      pairHourDatas(
-        where: { pair: $pair }
-        orderBy: periodStartUnix
-        orderDirection: asc
-        skip: $skip
-        first: $first
-      ) {
-        periodStartUnix
-        token0Price
-        token1Price
-        reserve0
-        reserve1
-      }
-    }
-    """
+    records: List[Dict] = []
+    now = latest_ts
+    start_ts = now - lookback_hours * 3600
 
-    rows: List[Dict] = []
-    for page in range(max_pages):
-        skip = page * page_size
-        data = _run_subgraph_query(
-            query, {"pair": pair_address, "skip": skip, "first": page_size}
-        )
-        items = data.get("pairHourDatas") or []
-        if not items:
-            break
-        rows.extend(items)
-        if len(items) < page_size:
-            break
-
-    if not rows:
-        raise RuntimeError("pairHourDatas kosong dari subgraph.")
-
-    records = []
-    for item in rows:
-        ts = item.get("periodStartUnix")
-        if ts is None:
-            continue
-        try:
-            ts_int = int(ts)
-        except (TypeError, ValueError):
-            continue
-
-        price_val = item.get(field)
-        alt_price = None
-        if price_val is not None:
-            try:
-                alt_price = float(price_val)
-            except (TypeError, ValueError):
-                alt_price = None
-
-        # Jika field utama kosong, coba derive dari reserve0/reserve1.
-        if alt_price is None:
-            r0 = item.get("reserve0")
-            r1 = item.get("reserve1")
-            try:
-                if r0 is not None and r1 is not None and float(r0) > 0:
-                    alt_price = float(r1) / float(r0)
-            except (TypeError, ValueError, ZeroDivisionError):
-                alt_price = None
-
-        if alt_price is None:
-            continue
-
-        records.append(
-            {
-                "timestamp": pd.to_datetime(ts_int, unit="s", utc=True),
-                "price": float(alt_price),
-            }
-        )
+    target_ts = start_ts
+    while target_ts <= now:
+        blk_num = find_block_for_timestamp(target_ts, latest_num, latest_ts)
+        reserves = call_get_reserves(pair_address, blk_num)
+        if reserves:
+            r0, r1 = reserves
+            if r0 > 0 and r1 > 0:
+                price = (r1 / r0) * 10 ** (TOKEN0_DECIMALS - TOKEN1_DECIMALS)
+                records.append(
+                    {
+                        "timestamp": pd.to_datetime(target_ts, unit="s", utc=True),
+                        "price": price,
+                        "block": blk_num,
+                    }
+                )
+        target_ts += sample_interval_sec
 
     df = pd.DataFrame(records).dropna()
     df = df.sort_values("timestamp").reset_index(drop=True)
     if df.empty:
-        raise RuntimeError("Parsed DataFrame kosong setelah pemrosesan subgraph.")
+        raise RuntimeError("Tidak ada data harga yang berhasil diambil dari RPC.")
     return df
 
 
@@ -309,9 +308,9 @@ def print_recommendations(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    print("Fetching price data from Aerodrome subgraph...")
+    print("Fetching price data from Base RPC...")
     raw_df = get_price_data()
-    print(f"Fetched {len(raw_df)} rows from subgraph")
+    print(f"Fetched {len(raw_df)} rows from RPC sampling")
 
     print("Computing ticks...")
     df_ticks = compute_ticks(raw_df)
