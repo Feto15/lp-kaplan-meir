@@ -1,3 +1,4 @@
+import argparse
 import math
 import os
 import time
@@ -22,14 +23,24 @@ TOKEN1_DECIMALS = int(os.getenv("AERODROME_TOKEN1_DECIMALS", "6"))   # USDbC
 
 # Estimasi block time Base (detik) untuk konversi waktu->block.
 BASE_BLOCK_TIME_SEC = float(os.getenv("BASE_BLOCK_TIME_SEC", "2"))
-# Berapa jam data yang diambil ke belakang dari block terbaru.
-LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "72"))
-# Interval sampling harga (detik).
-SAMPLE_INTERVAL_SEC = int(os.getenv("SAMPLE_INTERVAL_SEC", "300"))
+# Berapa jam data yang diambil ke belakang dari block terbaru (default 48 jam).
+LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "48"))
+# Interval sampling harga (detik). Rentang yang disarankan 300–600 detik.
+SAMPLE_INTERVAL_SEC = int(os.getenv("SAMPLE_INTERVAL_SEC", "600"))
+# Batasi batch panggilan eth_call agar tidak memicu rate limit terlalu cepat.
+BATCH_SIZE = int(os.getenv("RPC_BATCH_SIZE", "10"))
+BATCH_SLEEP = float(os.getenv("RPC_BATCH_SLEEP", "0.5"))
+# Prefix nama file cache bisa diubah via env untuk membedakan pair.
+CACHE_PREFIX = os.getenv("CACHE_PREFIX", "eth_usdc_prices")
+CACHE_DIR = "cache"
+USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
 CSV_OUTPUT = "survival_eth_usdc.csv"
+# Cache sederhana untuk mengurangi panggilan RPC berulang pada block/reserves.
+BLOCK_CACHE: Dict[int, Dict] = {}
+RESERVE_CACHE: Dict[int, Tuple[float, float]] = {}
 
 
 def rpc_call(method: str, params: List, max_retries: int = 5) -> Dict:
@@ -68,7 +79,21 @@ def _hex_to_int(h: str) -> int:
 
 
 def get_block(number: str) -> Dict:
-    return rpc_call("eth_getBlockByNumber", [number, False])
+    if number != "latest":
+        try:
+            num_int = int(number, 16)
+        except ValueError:
+            num_int = None
+        if num_int is not None and num_int in BLOCK_CACHE:
+            return BLOCK_CACHE[num_int]
+    blk = rpc_call("eth_getBlockByNumber", [number, False])
+    if number != "latest":
+        try:
+            num_int = int(number, 16)
+            BLOCK_CACHE[num_int] = blk
+        except ValueError:
+            pass
+    return blk
 
 
 def get_latest_block() -> Tuple[int, int]:
@@ -96,6 +121,8 @@ def find_block_for_timestamp(target_ts: int, latest_num: int, latest_ts: int) ->
 
 def call_get_reserves(pair: str, block_num: int) -> Optional[Tuple[float, float]]:
     """Call getReserves() at specific block."""
+    if block_num in RESERVE_CACHE:
+        return RESERVE_CACHE[block_num]
     data = "0x0902f1ac"
     params = [
         {
@@ -111,29 +138,85 @@ def call_get_reserves(pair: str, block_num: int) -> Optional[Tuple[float, float]
     try:
         reserve0 = int(res[2:66], 16)
         reserve1 = int(res[66:130], 16)
-        return float(reserve0), float(reserve1)
+        parsed = (float(reserve0), float(reserve1))
+        RESERVE_CACHE[block_num] = parsed
+        return parsed
     except Exception:  # noqa: BLE001
         return None
+
+
+def ensure_cache_dir() -> None:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+
+def cache_filepath(lookback_hours: int, sample_interval_sec: int) -> str:
+    ensure_cache_dir()
+    filename = f"{CACHE_PREFIX}_LOOKBACK{lookback_hours}_INTERVAL{sample_interval_sec}.json"
+    return os.path.join(CACHE_DIR, filename)
+
+
+def load_cached_prices(path: str, start_ts: int, end_ts: int) -> pd.DataFrame:
+    """Load cached price data between start_ts and end_ts (inclusive)."""
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        df = pd.read_json(path, orient="records")
+    except ValueError:
+        return pd.DataFrame()
+    if df.empty:
+        return df
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    start_dt = pd.to_datetime(start_ts, unit="s", utc=True)
+    end_dt = pd.to_datetime(end_ts, unit="s", utc=True)
+    df = df[(df["timestamp"] >= start_dt) & (df["timestamp"] <= end_dt)]
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    return df
+
+
+def save_cached_prices(df: pd.DataFrame, path: str) -> None:
+    """Persist price data to cache file as JSON records."""
+    ensure_cache_dir()
+    df.to_json(path, orient="records", date_format="iso")
 
 
 def get_price_data(
     pair_address: str = PAIR_ADDRESS,
     lookback_hours: int = LOOKBACK_HOURS,
     sample_interval_sec: int = SAMPLE_INTERVAL_SEC,
+    use_cache: Optional[bool] = None,
 ) -> pd.DataFrame:
     """
     Ambil data harga historis via RPC dengan sampling interval tetap.
     Mengambil harga WETH/USDbC: price = reserve1/reserve0 * 10^(dec0-dec1).
     """
     pair_address = pair_address.lower()
-    latest_num, latest_ts = get_latest_block()
+    use_cache_flag = USE_CACHE_DEFAULT if use_cache is None else use_cache
+    cache_path = cache_filepath(lookback_hours, sample_interval_sec)
+    approx_now = int(time.time())
+    approx_start_ts = approx_now - lookback_hours * 3600
+    cached_df = load_cached_prices(cache_path, approx_start_ts, approx_now)
+    if use_cache_flag and not cached_df.empty:
+        print(f"Loading price data from cache: {cache_path}")
+        return cached_df.reset_index(drop=True)
 
+    latest_num, latest_ts = get_latest_block()
     records: List[Dict] = []
     now = latest_ts
     start_ts = now - lookback_hours * 3600
+    cached_df = load_cached_prices(cache_path, start_ts, now)
+    if not cached_df.empty:
+        print(f"Using cached history to minimize RPC calls ({len(cached_df)} rows)")
 
     target_ts = start_ts
+    call_counter = 0
+    existing_ts: set[int] = set()
+    if not cached_df.empty:
+        existing_ts = {int(ts.timestamp()) for ts in cached_df["timestamp"]}
+
     while target_ts <= now:
+        if target_ts in existing_ts:
+            target_ts += sample_interval_sec
+            continue
         blk_num = find_block_for_timestamp(target_ts, latest_num, latest_ts)
         reserves = call_get_reserves(pair_address, blk_num)
         if reserves:
@@ -147,12 +230,24 @@ def get_price_data(
                         "block": blk_num,
                     }
                 )
+        call_counter += 1
+        if BATCH_SIZE > 0 and call_counter % BATCH_SIZE == 0:
+            time.sleep(BATCH_SLEEP)
         target_ts += sample_interval_sec
 
-    df = pd.DataFrame(records).dropna()
+    df_parts = []
+    if not cached_df.empty:
+        df_parts.append(cached_df)
+    if records:
+        df_parts.append(pd.DataFrame(records))
+
+    df = pd.concat(df_parts, ignore_index=True) if df_parts else pd.DataFrame()
+    df = df.dropna()
     df = df.sort_values("timestamp").reset_index(drop=True)
     if df.empty:
         raise RuntimeError("Tidak ada data harga yang berhasil diambil dari RPC.")
+    save_cached_prices(df, cache_path)
+    print(f"Saved updated price data to cache: {cache_path}")
     return df
 
 
@@ -213,9 +308,17 @@ def compute_survival(df: pd.DataFrame, W: int, horizon_hours: int) -> Optional[D
     kmf = KaplanMeierFitter()
     kmf.fit(durations_arr, event_observed=events_arr)
     km_surv = float(kmf.predict(horizon_hours))
-    ci_df = kmf.confidence_interval_at_times([horizon_hours])
-    ci_low = float(ci_df.iloc[0, 0])
-    ci_high = float(ci_df.iloc[0, 1])
+
+    # Ambil CI dengan reindex + ffill karena versi lifelines di environment tidak punya confidence_interval_at_times
+    ci_table = kmf.confidence_interval_
+    ci_at = (
+        ci_table.reindex(ci_table.index.union([horizon_hours]))
+        .sort_index()
+        .ffill()
+        .loc[horizon_hours]
+    )
+    ci_low = float(ci_at.iloc[0])
+    ci_high = float(ci_at.iloc[1])
 
     count_total = len(durations_arr)
     count_full = int(follow_arr.sum())
@@ -307,10 +410,29 @@ def print_recommendations(df: pd.DataFrame) -> None:
         print(f"    percent_range_total: {row['percent_range_total']:.5f}%\n")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compute survival estimates for price data.")
+    parser.add_argument(
+        "--use-cache",
+        dest="use_cache",
+        action="store_true",
+        help="Load data from cache if available (env USE_CACHE=true also works).",
+    )
+    parser.add_argument(
+        "--no-cache",
+        dest="use_cache",
+        action="store_false",
+        help="Force fresh fetch and refresh cache.",
+    )
+    parser.set_defaults(use_cache=None)
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     print("Fetching price data from Base RPC...")
-    raw_df = get_price_data()
-    print(f"Fetched {len(raw_df)} rows from RPC sampling")
+    raw_df = get_price_data(use_cache=args.use_cache)
+    print(f"Fetched {len(raw_df)} rows from RPC sampling/cache")
 
     print("Computing ticks...")
     df_ticks = compute_ticks(raw_df)
