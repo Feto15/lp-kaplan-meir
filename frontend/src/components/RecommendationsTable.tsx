@@ -1,70 +1,123 @@
 import {
   Box,
+  Card,
+  CardHeader,
   Chip,
-  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
+  useTheme,
 } from "@mui/material";
 import type { Recommendation } from "../types";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import CancelIcon from "@mui/icons-material/Cancel";
+import InfoIcon from "@mui/icons-material/Info";
 
 interface Props {
   data: Recommendation[];
 }
 
 export function RecommendationsTable({ data }: Props) {
+  const theme = useTheme();
   const sorted = [...data].sort((a, b) => {
     if (a.horizon_hours === b.horizon_hours) return a.W - b.W;
     return a.horizon_hours - b.horizon_hours;
   });
 
   return (
-    <Box>
-      <Typography variant="h6" gutterBottom>
-        Recommendations
-      </Typography>
-      <TableContainer component={Paper} sx={{ maxHeight: 420 }}>
-        <Table size="small" stickyHeader>
+    <Card sx={{ display: "flex", flexDirection: "column" }}>
+      <CardHeader
+        title="Strategy Recommendations"
+        subheader="Analysis based on survival probability"
+        titleTypographyProps={{ variant: "h6", fontWeight: "bold" }}
+      />
+      <TableContainer>
+        <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Horizon (h)</TableCell>
-              <TableCell>W</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>km_surv</TableCell>
-              <TableCell>CI</TableCell>
-              <TableCell>Count</TableCell>
-              <TableCell>Reason</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Horizon</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Window (W)</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Status</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Survival Prob.</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Sample Size</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }} align="center">
+                Info
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {sorted.map((row, idx) => (
-              <TableRow key={`${row.horizon_hours}-${row.W}-${idx}`}>
-                <TableCell>{row.horizon_hours}</TableCell>
-                <TableCell>{row.W}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={row.status}
-                    color={row.status === "ACCEPTED" ? "success" : "default"}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>{row.km_surv.toFixed(4)}</TableCell>
-                <TableCell>
-                  [{row.km_ci_low.toFixed(4)} .. {row.km_ci_high.toFixed(4)}]
-                </TableCell>
-                <TableCell>
-                  total {row.count_total} | full {row.count_full_followup}
-                </TableCell>
-                <TableCell style={{ maxWidth: 280 }}>{row.reason}</TableCell>
-              </TableRow>
-            ))}
+            {sorted.map((row, idx) => {
+              const isAccepted = row.status === "ACCEPTED";
+              return (
+                <TableRow
+                  key={`${row.horizon_hours}-${row.W}-${idx}`}
+                  hover
+                  sx={{
+                    "&:last-child td, &:last-child th": { border: 0 },
+                    bgcolor: isAccepted ? "rgba(16, 185, 129, 0.04)" : "transparent",
+                  }}
+                >
+                  <TableCell sx={{ fontWeight: "medium" }}>{row.horizon_hours}h</TableCell>
+                  <TableCell>{row.W}</TableCell>
+                  <TableCell>
+                    <Chip
+                      icon={isAccepted ? <CheckCircleIcon /> : <CancelIcon />}
+                      label={row.status}
+                      color={isAccepted ? "success" : "default"}
+                      size="small"
+                      variant={isAccepted ? "filled" : "outlined"}
+                      sx={{ fontWeight: "bold", minWidth: 100 }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: "flex", flexDirection: "column" }}>
+                      <Typography variant="body2" fontWeight="bold" color={isAccepted ? "success.main" : "text.primary"}>
+                        {(row.km_surv * 100).toFixed(1)}%
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        CI: {row.km_ci_low.toFixed(2)}-{row.km_ci_high.toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: "flex", flexDirection: "column" }}>
+                      <Typography variant="body2">{row.count_total} total</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {row.count_full_followup} full
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell align="center">
+                    <Tooltip
+                      title={row.reason}
+                      arrow
+                      placement="left"
+                      componentsProps={{
+                        tooltip: {
+                          sx: {
+                            bgcolor: theme.palette.background.paper,
+                            border: `1px solid ${theme.palette.divider}`,
+                            color: theme.palette.text.primary,
+                            boxShadow: theme.shadows[4],
+                            p: 1.5,
+                          },
+                        },
+                      }}
+                    >
+                      <InfoIcon color="action" fontSize="small" sx={{ cursor: "help" }} />
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </TableContainer>
-    </Box>
+    </Card>
   );
 }
