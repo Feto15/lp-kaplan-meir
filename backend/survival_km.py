@@ -31,13 +31,14 @@ SAMPLE_INTERVAL_SEC = int(os.getenv("SAMPLE_INTERVAL_SEC", "600"))
 BATCH_SIZE = int(os.getenv("RPC_BATCH_SIZE", "10"))
 BATCH_SLEEP = float(os.getenv("RPC_BATCH_SLEEP", "0.5"))
 # Prefix nama file cache bisa diubah via env untuk membedakan pair.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_PREFIX = os.getenv("CACHE_PREFIX", "eth_usdc_prices")
-CACHE_DIR = "cache"
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
 USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
-CSV_OUTPUT = "survival_eth_usdc.csv"
+CSV_OUTPUT = os.path.join(BASE_DIR, "survival_eth_usdc.csv")
 # Cache sederhana untuk mengurangi panggilan RPC berulang pada block/reserves.
 BLOCK_CACHE: Dict[int, Dict] = {}
 RESERVE_CACHE: Dict[int, Tuple[float, float]] = {}

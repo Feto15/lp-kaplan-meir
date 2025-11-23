@@ -18,6 +18,7 @@ Program Python untuk menghitung survival probability harga dalam rentang tick (U
 
 ## Cara menjalankan
 ```bash
+cd backend
 export AERODROME_RPC_URL="https://mainnet.base.org"
 # opsional: override jika perlu
 # export AERODROME_PAIR_ADDRESS="0xb4885bc63399bf5518b994c1d0c153334ee579d0"
@@ -29,5 +30,10 @@ export AERODROME_RPC_URL="https://mainnet.base.org"
 # export RPC_BATCH_SLEEP="0.25"           # durasi sleep antar batch (detik)
 
 python3 survival_km.py
+cd ..
 ```
-Hasil CSV tersimpan di `survival_eth_usdc.csv`, dan output rekomendasi dicetak di terminal.
+Hasil CSV tersimpan di `backend/survival_eth_usdc.csv` dan cache di `backend/cache/`. Untuk dipakai FE, salin ke `frontend/public/data/`:
+```bash
+cp backend/survival_eth_usdc.csv frontend/public/data/
+cp backend/cache/eth_usdc_prices_LOOKBACK48_INTERVAL600.json frontend/public/data/price.json
+```
