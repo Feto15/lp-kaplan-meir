@@ -32,10 +32,10 @@ export AERODROME_RPC_URL="https://mainnet.base.org"
 python3 survival_km.py
 cd ..
 ```
-Hasil CSV tersimpan di `backend/survival_eth_usdc.csv`, JSON rekomendasi di `backend/survival_recommendations.json`, dan cache di `backend/cache/`. Untuk dipakai FE, salin ke `frontend/public/data/`:
+Hasil CSV/JSON sekarang memakai prefix pair: `backend/<prefix>_survival.csv`, `backend/<prefix>_recommendations.json`, dan cache di `backend/cache/<prefix>_LOOKBACK...json` (prefix otomatis berdasar alamat pair jika `CACHE_PREFIX` kosong). Untuk dipakai FE, salin ke `frontend/public/data/`:
 ```bash
-cp backend/survival_recommendations.json frontend/public/data/recommendations.json
-cp backend/cache/eth_usdc_prices_LOOKBACK48_INTERVAL600.json frontend/public/data/price.json
+cp backend/<prefix>_recommendations.json frontend/public/data/recommendations.json
+cp backend/cache/<prefix>_LOOKBACK48_INTERVAL600.json frontend/public/data/price.json
 ```
 
 ### Pool V3/CL (slot0) – script terpisah
@@ -50,3 +50,4 @@ RPC_BATCH_SIZE=10 RPC_BATCH_SLEEP=0.5 \
 python3 survival_km_v3.py --no-cache
 ```
 Output: `backend/survival_eth_usdc_v3.csv`, `backend/survival_recommendations_v3.json`, dan cache `cache/<prefix>_v3_LOOKBACK...json`.
+Hasil V3 juga memakai prefix: `backend/<prefix>_survival_v3.csv`, `backend/<prefix>_recommendations_v3.json`, cache `backend/cache/<prefix>_v3_LOOKBACK...json`.

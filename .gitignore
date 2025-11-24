@@ -19,3 +19,5 @@ backend/dist/
 cache/
 backend/cache/
 backend/survival_eth_usdc.csv
+backend/*_survival*.csv
+backend/*_recommendations*.json

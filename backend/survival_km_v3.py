@@ -35,8 +35,6 @@ USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
-CSV_OUTPUT = os.path.join(BASE_DIR, "survival_eth_usdc_v3.csv")
-JSON_OUTPUT = os.path.join(BASE_DIR, "survival_recommendations_v3.json")
 
 BLOCK_CACHE: Dict[int, Dict] = {}
 SLOT0_CACHE: Dict[int, int] = {}
@@ -161,6 +159,13 @@ def cache_filepath(pair_address: str, lookback_hours: int, sample_interval_sec: 
     prefix = cache_prefix_for_pair(pair_address)
     filename = f"{prefix}_v3_LOOKBACK{lookback_hours}_INTERVAL{sample_interval_sec}.json"
     return os.path.join(CACHE_DIR, filename)
+
+
+def output_paths(pair_address: str) -> Tuple[str, str]:
+    prefix = cache_prefix_for_pair(pair_address)
+    csv_path = os.path.join(BASE_DIR, f"{prefix}_survival_v3.csv")
+    json_path = os.path.join(BASE_DIR, f"{prefix}_recommendations_v3.json")
+    return csv_path, json_path
 
 
 def _read_address_from_data(data: str) -> Optional[str]:
@@ -464,9 +469,9 @@ def print_recommendations(df: pd.DataFrame) -> None:
         print(f"    percent_range_total: {row['percent_range_total']:.5f}%\n")
 
 
-def save_recommendations_json(df: pd.DataFrame) -> None:
+def save_recommendations_json(df: pd.DataFrame, path: str) -> None:
     ensure_cache_dir()
-    df.to_json(JSON_OUTPUT, orient="records", date_format="iso")
+    df.to_json(path, orient="records", date_format="iso")
 
 
 def parse_args() -> argparse.Namespace:
@@ -490,6 +495,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     start_total = time.time()
     args = parse_args()
+    csv_output, json_output = output_paths(PAIR_ADDRESS)
     print("Fetching price data (slot0)...")
     start_fetch = time.time()
     raw_df = get_price_data(use_cache=args.use_cache)
@@ -502,9 +508,9 @@ def main() -> None:
 
     print("Computing survival and recommendations...")
     recs_df = generate_recommendation(df_ticks)
-    recs_df.to_csv(CSV_OUTPUT, index=False)
-    save_recommendations_json(recs_df)
-    print(f"Saved recommendations to {CSV_OUTPUT} and {JSON_OUTPUT}")
+    recs_df.to_csv(csv_output, index=False)
+    save_recommendations_json(recs_df, json_output)
+    print(f"Saved recommendations to {csv_output} and {json_output}")
     print()
     print_recommendations(recs_df)
     total_elapsed = time.time() - start_total

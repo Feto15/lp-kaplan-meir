@@ -6,11 +6,16 @@ import {
   Container,
   createTheme,
   CssBaseline,
+  FormControl,
+  MenuItem,
   Paper,
+  Select,
+  type SelectChangeEvent,
   Stack,
   ThemeProvider,
   Toolbar,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import Grid from "@mui/material/GridLegacy";
 import { useEffect, useMemo, useState } from "react";
@@ -24,6 +29,9 @@ import ShowChartIcon from "@mui/icons-material/ShowChart";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 
 function App() {
+  const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
+  const [dataSource, setDataSource] = useState<string>("/data/recommendations.json");
+
   const theme = useMemo(
     () =>
       createTheme({
@@ -90,10 +98,12 @@ function App() {
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
       try {
-        const [r, p] = await Promise.all([fetchRecommendations(), fetchPrices()]);
+        const [r, p] = await Promise.all([fetchRecommendations(dataSource), fetchPrices()]);
         setRecs(r);
         setPrices(p);
+        setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Gagal memuat data");
       } finally {
@@ -101,7 +111,11 @@ function App() {
       }
     };
     void load();
-  }, []);
+  }, [dataSource]);
+
+  const handleSourceChange = (event: SelectChangeEvent) => {
+    setDataSource(event.target.value);
+  };
 
   const horizons = useMemo(
     () => Array.from(new Set(recs.map((r) => r.horizon_hours))).sort((a, b) => a - b),
@@ -119,13 +133,31 @@ function App() {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: "bold" }}>
               Kaplan-Meier Survival Dashboard
             </Typography>
-            <Chip
-              icon={<ShowChartIcon />}
-              label="Base Mainnet"
-              color="primary"
-              variant="outlined"
-              size="small"
-            />
+            <Stack direction="row" spacing={2} alignItems="center">
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <Select
+                  value={dataSource}
+                  onChange={handleSourceChange}
+                  sx={{
+                    color: "white",
+                    ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255, 255, 255, 0.3)" },
+                    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255, 255, 255, 0.5)" },
+                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "primary.main" },
+                    ".MuiSvgIcon-root": { color: "white" },
+                  }}
+                >
+                  <MenuItem value="/data/recommendations.json">Data Source 1</MenuItem>
+                  <MenuItem value="/data/recommendations_v3.json">Data Source 2 (V3)</MenuItem>
+                </Select>
+              </FormControl>
+              <Chip
+                icon={<ShowChartIcon />}
+                label="Base Mainnet"
+                color="primary"
+                variant="outlined"
+                size="small"
+              />
+            </Stack>
           </Toolbar>
         </AppBar>
 
@@ -169,7 +201,12 @@ function App() {
                       Data Sources
                     </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      <Chip label="survival_eth_usdc.csv" size="small" sx={{ fontFamily: "monospace" }} />
+                      <Chip
+                        label={dataSource.split("/").pop()}
+                        size="small"
+                        sx={{ fontFamily: "monospace" }}
+                        color="primary"
+                      />
                       <Chip label="price.json" size="small" sx={{ fontFamily: "monospace" }} />
                     </Stack>
                   </Paper>
