@@ -1,4 +1,4 @@
-import type { Manifest, PricePoint, Recommendation, RecommendationResponse } from "../types";
+import type { Manifest, PricePoint, PriceResponse, Recommendation, RecommendationResponse } from "../types";
 
 const DEFAULT_RECOMMENDATION_URL = "/data/recommendations.json";
 const DEFAULT_PRICE_URL = "/data/price.json";
@@ -49,6 +49,8 @@ export async function fetchRecommendations(
   fallbackUrl: string = DEFAULT_RECOMMENDATION_URL,
 ): Promise<RecommendationResponse> {
   const res = await fetchWithFallback(url, fallbackUrl);
+  const generatedAtHeader = res.headers.get("x-generated-at");
+  const generatedAt = generatedAtHeader ? Number(generatedAtHeader) : undefined;
   const json = await res.json();
   
   let rawData: Array<Record<string, unknown>> = [];
@@ -81,14 +83,16 @@ export async function fetchRecommendations(
     }))
     .filter((row) => Number.isFinite(row.W) && Number.isFinite(row.horizon_hours));
 
-  return { meta, data };
+  return { meta, data, generatedAt };
 }
 
 export async function fetchPrices(
   url: string = DEFAULT_PRICE_URL,
   fallbackUrl: string = DEFAULT_PRICE_URL,
-): Promise<PricePoint[]> {
+): Promise<PriceResponse> {
   const res = await fetchWithFallback(url, fallbackUrl);
+  const generatedAtHeader = res.headers.get("x-generated-at");
+  const generatedAt = generatedAtHeader ? Number(generatedAtHeader) : undefined;
   const json = await res.json();
 
   let rawData: Array<Record<string, unknown>> = [];
@@ -99,11 +103,13 @@ export async function fetchPrices(
     rawData = (json as { data: Array<Record<string, unknown>> }).data;
   }
 
-  return rawData
+  const data = rawData
     .map((row) => ({
       timestamp: String(row.timestamp ?? ""),
       price: parseNumber(row.price),
       block: row.block ? Number(row.block) : undefined,
     }))
     .filter((row) => row.timestamp && Number.isFinite(row.price));
+
+  return { data, generatedAt };
 }

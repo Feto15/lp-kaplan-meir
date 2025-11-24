@@ -97,6 +97,7 @@ function App() {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   // Load manifest first
   useEffect(() => {
@@ -125,13 +126,17 @@ function App() {
         const dataset = datasets.find((d) => d.id === selectedDatasetId);
         if (!dataset) throw new Error("Dataset not found");
 
-        const [recResponse, p] = await Promise.all([
+        const [recResponse, priceResponse] = await Promise.all([
           fetchRecommendations(dataset.recommendations),
           fetchPrices(dataset.price),
         ]);
         setRecs(recResponse.data);
         setMeta(recResponse.meta);
-        setPrices(p);
+        setPrices(priceResponse.data);
+        const recUpdated = recResponse.generatedAt ?? 0;
+        const priceUpdated = priceResponse.generatedAt ?? 0;
+        const maxUpdated = Math.max(recUpdated, priceUpdated);
+        setLastUpdated(maxUpdated > 0 ? maxUpdated : null);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Gagal memuat data");
@@ -190,6 +195,15 @@ function App() {
                 variant="outlined"
                 size="small"
               />
+              {lastUpdated && (
+                <Chip
+                  label={`Updated: ${new Date(lastUpdated).toLocaleString()}`}
+                  color="secondary"
+                  variant="outlined"
+                  size="small"
+                  sx={{ ml: 1 }}
+                />
+              )}
             </Stack>
           </Toolbar>
         </AppBar>

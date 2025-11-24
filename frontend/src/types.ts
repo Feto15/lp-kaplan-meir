@@ -31,6 +31,7 @@ export interface RecommendationMeta {
 export interface RecommendationResponse {
   meta?: RecommendationMeta;
   data: Recommendation[];
+  generatedAt?: number;
 }
 
 export interface Dataset {
@@ -42,4 +43,9 @@ export interface Dataset {
 
 export interface Manifest {
   datasets: Dataset[];
+}
+
+export interface PriceResponse {
+  data: PricePoint[];
+  generatedAt?: number;
 }

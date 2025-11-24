@@ -51,3 +51,25 @@ python3 survival_km_v3.py --no-cache
 ```
 Output: `backend/survival_eth_usdc_v3.csv`, `backend/survival_recommendations_v3.json`, dan cache `cache/<prefix>_v3_LOOKBACK...json`.
 Hasil V3 juga memakai prefix: `backend/<prefix>_survival_v3.csv`, `backend/<prefix>_recommendations_v3.json`, cache `backend/cache/<prefix>_v3_LOOKBACK...json`.
+
+## Cloudflare Worker + D1
+- Worker entry: `worker/src/index.ts`, config `wrangler.toml`, DB `lp` (D1, id `6109bab0-f024-44f3-943e-c8319e605eb8`).
+- Schema: `cloudflare/schema.sql` (tabel `rec_runs` dengan kolom `pair`, `interval_sec`, `generated_at`, `payload`).
+- Endpoint:
+  - `POST /ingest` dengan body `{ pair, lookback, interval_sec, generated_at, payload }` (payload berisi `{recommendations, prices}`).
+  - `GET /latest?pair=...&interval_sec=...&kind=recommendations|prices` mengembalikan JSON + header `x-generated-at`.
+  - `GET /health` untuk pengecekan liveness. CORS sudah diaktifkan.
+- Deploy: `pnpm wrangler deploy`. Dev: `pnpm wrangler dev`. Apply schema: `pnpm wrangler d1 execute lp --remote --file cloudflare/schema.sql`.
+
+## Env dan ingest otomatis
+- Backend env contoh:
+  - `backend/.env.weth_usdc`, `backend/.env.aero_weth` (ENABLE_D1_INGEST, WORKER_INGEST_URL, pair, interval, batch).
+  - Auto-export sebelum run: `set -a; source .env.weth_usdc; set +a`.
+- Jalankan:
+  - V2: `python3 survival_km.py` (tanpa flag = top-up cache dan push D1).
+  - V3: `python3 survival_km_v3.py` (pastikan pair CL/V3).
+- FE env:
+  - `frontend/.env.development` → `VITE_DATA_BASE=https://lp.kalarangga289.workers.dev`
+  - `frontend/.env.production` sama, atau sesuaikan base URL Worker.
+- Manifest: `frontend/public/data/manifest.json` menunjuk ke `/latest?...&kind=...` sehingga FE fetch dari Worker/D1.
+- FE menampilkan “Updated” dari header `x-generated-at` jika fetch sukses.
