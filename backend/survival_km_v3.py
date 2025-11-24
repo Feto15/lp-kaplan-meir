@@ -21,6 +21,7 @@ DEFAULT_TOKEN0_DECIMALS = 18
 DEFAULT_TOKEN1_DECIMALS = 6
 TOKEN0_DECIMALS_ENV = os.getenv("AERODROME_TOKEN0_DECIMALS")
 TOKEN1_DECIMALS_ENV = os.getenv("AERODROME_TOKEN1_DECIMALS")
+INVERT_PRICE = os.getenv("INVERT_PRICE", "false").lower() == "true"
 
 BASE_BLOCK_TIME_SEC = float(os.getenv("BASE_BLOCK_TIME_SEC", "2"))
 LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "48"))
@@ -32,6 +33,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_PREFIX_ENV = os.getenv("CACHE_PREFIX")
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
 USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
+PAIR_LABEL = os.getenv("PAIR_LABEL", "").strip()
+WORKER_INGEST_URL = os.getenv("WORKER_INGEST_URL", "").strip()
+ENABLE_D1_INGEST = os.getenv("ENABLE_D1_INGEST", "false").lower() == "true"
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
@@ -163,9 +167,14 @@ def cache_filepath(pair_address: str, lookback_hours: int, sample_interval_sec: 
 
 def output_paths(pair_address: str) -> Tuple[str, str]:
     prefix = cache_prefix_for_pair(pair_address)
-    csv_path = os.path.join(BASE_DIR, f"{prefix}_survival_v3.csv")
-    json_path = os.path.join(BASE_DIR, f"{prefix}_recommendations_v3.json")
+    csv_path = os.path.join(BASE_DIR, f"{prefix}_v3_survival.csv")
+    json_path = os.path.join(BASE_DIR, f"{prefix}_v3_recommendations.json")
     return csv_path, json_path
+
+
+def build_meta(pair_address: str) -> Dict[str, str]:
+    label = PAIR_LABEL if PAIR_LABEL else cache_prefix_for_pair(pair_address)
+    return {"pair_label": label, "pair_address": pair_address.lower(), "pool_type": "v3"}
 
 
 def _read_address_from_data(data: str) -> Optional[str]:
@@ -225,7 +234,11 @@ def load_cached_prices(path: str, start_ts: int, end_ts: int) -> pd.DataFrame:
     if not os.path.exists(path):
         return pd.DataFrame()
     try:
-        df = pd.read_json(path, orient="records")
+        loaded = pd.read_json(path)
+        if isinstance(loaded, pd.DataFrame) and "timestamp" in loaded.columns:
+            df = loaded
+        else:
+            df = pd.DataFrame(loaded.get("data", []))  # type: ignore[arg-type]
     except ValueError:
         return pd.DataFrame()
     if df.empty:
@@ -240,7 +253,8 @@ def load_cached_prices(path: str, start_ts: int, end_ts: int) -> pd.DataFrame:
 
 def save_cached_prices(df: pd.DataFrame, path: str) -> None:
     ensure_cache_dir()
-    df.to_json(path, orient="records", date_format="iso")
+    payload = {"meta": build_meta(PAIR_ADDRESS), "data": df.to_dict(orient="records")}
+    pd.Series(payload).to_json(path, date_format="iso")
 
 
 def get_price_data(
@@ -248,6 +262,7 @@ def get_price_data(
     lookback_hours: int = LOOKBACK_HOURS,
     sample_interval_sec: int = SAMPLE_INTERVAL_SEC,
     use_cache: Optional[bool] = None,
+    invert_price: bool = False,
 ) -> pd.DataFrame:
     """
     Ambil data harga historis via RPC (slot0) dengan sampling interval tetap.
@@ -257,10 +272,14 @@ def get_price_data(
     dec0, dec1 = resolve_decimals(pair_address)
     print(f"Using token decimals: token0={dec0}, token1={dec1}")
     use_cache_flag = USE_CACHE_DEFAULT if use_cache is None else use_cache
+    invert_flag = INVERT_PRICE or invert_price
     cache_path = cache_filepath(pair_address, lookback_hours, sample_interval_sec)
     approx_now = int(time.time())
     approx_start_ts = approx_now - lookback_hours * 3600
     cached_df = load_cached_prices(cache_path, approx_start_ts, approx_now)
+    if invert_flag and not cached_df.empty:
+        cached_df = cached_df.copy()
+        cached_df["price"] = 1 / cached_df["price"]
     if use_cache_flag and not cached_df.empty:
         print(f"Loading price data from cache: {cache_path}")
         return cached_df.reset_index(drop=True)
@@ -270,6 +289,9 @@ def get_price_data(
     now = latest_ts
     start_ts = now - lookback_hours * 3600
     cached_df = load_cached_prices(cache_path, start_ts, now)
+    if invert_flag and not cached_df.empty:
+        cached_df = cached_df.copy()
+        cached_df["price"] = 1 / cached_df["price"]
     if not cached_df.empty:
         print(f"Using cached history to minimize RPC calls ({len(cached_df)} rows)")
 
@@ -287,6 +309,8 @@ def get_price_data(
         sqrt_price_x96 = call_slot0(pair_address, blk_num)
         if sqrt_price_x96:
             price = (sqrt_price_x96 ** 2) / (2 ** 192) * (10 ** (dec0 - dec1))
+            if invert_flag and price:
+                price = 1 / price
             records.append(
                 {
                     "timestamp": pd.to_datetime(target_ts, unit="s", utc=True),
@@ -469,9 +493,56 @@ def print_recommendations(df: pd.DataFrame) -> None:
         print(f"    percent_range_total: {row['percent_range_total']:.5f}%\n")
 
 
-def save_recommendations_json(df: pd.DataFrame, path: str) -> None:
+def save_recommendations_json(df: pd.DataFrame, path: str) -> Dict:
     ensure_cache_dir()
-    df.to_json(path, orient="records", date_format="iso")
+    payload = {"meta": build_meta(PAIR_ADDRESS), "data": df.to_dict(orient="records")}
+    pd.Series(payload).to_json(path, date_format="iso")
+    return payload
+
+
+def _serialize_prices(df: pd.DataFrame) -> List[Dict]:
+    records: List[Dict] = []
+    for row in df.to_dict(orient="records"):
+        ts = row.get("timestamp")
+        if hasattr(ts, "isoformat"):
+            ts_str = ts.isoformat()
+        else:
+            ts_str = str(ts)
+        rec: Dict = {"timestamp": ts_str, "price": float(row.get("price", 0))}
+        blk = row.get("block")
+        if blk is not None and not (isinstance(blk, float) and math.isnan(blk)):
+            try:
+                rec["block"] = int(blk)
+            except Exception:  # noqa: BLE001
+                pass
+        records.append(rec)
+    return records
+
+
+def maybe_ingest_to_worker(
+    recs_payload: Dict,
+    price_df: pd.DataFrame,
+    lookback_hours: int,
+    interval_sec: int,
+) -> None:
+    if not ENABLE_D1_INGEST or not WORKER_INGEST_URL:
+        return
+    body = {
+        "pair": PAIR_LABEL or cache_prefix_for_pair(PAIR_ADDRESS),
+        "lookback": lookback_hours,
+        "interval_sec": interval_sec,
+        "generated_at": int(time.time() * 1000),
+        "payload": {
+            "recommendations": recs_payload,
+            "prices": {"meta": build_meta(PAIR_ADDRESS), "data": _serialize_prices(price_df)},
+        },
+    }
+    try:
+        resp = requests.post(WORKER_INGEST_URL, json=body, timeout=15)
+        resp.raise_for_status()
+        print(f"Pushed payload to Worker D1 ({WORKER_INGEST_URL}).")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: failed to push payload to Worker D1: {exc}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -488,6 +559,12 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Force fresh fetch and refresh cache.",
     )
+    parser.add_argument(
+        "--invert-price",
+        dest="invert_price",
+        action="store_true",
+        help="Invert price output (1/price).",
+    )
     parser.set_defaults(use_cache=None)
     return parser.parse_args()
 
@@ -498,7 +575,7 @@ def main() -> None:
     csv_output, json_output = output_paths(PAIR_ADDRESS)
     print("Fetching price data (slot0)...")
     start_fetch = time.time()
-    raw_df = get_price_data(use_cache=args.use_cache)
+    raw_df = get_price_data(use_cache=args.use_cache, invert_price=args.invert_price)
     fetch_elapsed = time.time() - start_fetch
     print(f"Fetched {len(raw_df)} rows from slot0 sampling/cache in {fetch_elapsed:.2f} sec")
 
@@ -509,8 +586,9 @@ def main() -> None:
     print("Computing survival and recommendations...")
     recs_df = generate_recommendation(df_ticks)
     recs_df.to_csv(csv_output, index=False)
-    save_recommendations_json(recs_df, json_output)
+    recs_payload = save_recommendations_json(recs_df, json_output)
     print(f"Saved recommendations to {csv_output} and {json_output}")
+    maybe_ingest_to_worker(recs_payload, raw_df, LOOKBACK_HOURS, SAMPLE_INTERVAL_SEC)
     print()
     print_recommendations(recs_df)
     total_elapsed = time.time() - start_total

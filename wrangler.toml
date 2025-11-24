@@ -1,0 +1,8 @@
+name = "lp"
+main = "worker/src/index.ts"
+compatibility_date = "2024-06-20"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lp"
+database_id = "6109bab0-f024-44f3-943e-c8319e605eb8"

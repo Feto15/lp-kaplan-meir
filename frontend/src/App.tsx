@@ -20,17 +20,19 @@ import {
 import Grid from "@mui/material/GridLegacy";
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { fetchPrices, fetchRecommendations } from "./api/data";
+import { fetchManifest, fetchPrices, fetchRecommendations } from "./api/data";
 import { PriceChart } from "./components/PriceChart";
 import { RecommendationsTable } from "./components/RecommendationsTable";
 import { SurvivalChart } from "./components/SurvivalChart";
-import type { PricePoint, Recommendation } from "./types";
+import type { Dataset, PricePoint, Recommendation, RecommendationMeta } from "./types";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 
 function App() {
   const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
-  const [dataSource, setDataSource] = useState<string>("/data/recommendations.json");
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
+  const [meta, setMeta] = useState<RecommendationMeta | undefined>(undefined);
 
   const theme = useMemo(
     () =>
@@ -96,12 +98,39 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Load manifest first
   useEffect(() => {
-    const load = async () => {
+    const loadManifest = async () => {
+      try {
+        const manifest = await fetchManifest();
+        setDatasets(manifest.datasets);
+        if (manifest.datasets.length > 0) {
+          setSelectedDatasetId(manifest.datasets[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load manifest:", err);
+        setError("Gagal memuat daftar dataset");
+      }
+    };
+    void loadManifest();
+  }, []);
+
+  // Load data when selected dataset changes
+  useEffect(() => {
+    if (!selectedDatasetId) return;
+
+    const loadData = async () => {
       setLoading(true);
       try {
-        const [r, p] = await Promise.all([fetchRecommendations(dataSource), fetchPrices()]);
-        setRecs(r);
+        const dataset = datasets.find((d) => d.id === selectedDatasetId);
+        if (!dataset) throw new Error("Dataset not found");
+
+        const [recResponse, p] = await Promise.all([
+          fetchRecommendations(dataset.recommendations),
+          fetchPrices(dataset.price),
+        ]);
+        setRecs(recResponse.data);
+        setMeta(recResponse.meta);
         setPrices(p);
         setError(null);
       } catch (err) {
@@ -110,11 +139,11 @@ function App() {
         setLoading(false);
       }
     };
-    void load();
-  }, [dataSource]);
+    void loadData();
+  }, [selectedDatasetId, datasets]);
 
   const handleSourceChange = (event: SelectChangeEvent) => {
-    setDataSource(event.target.value);
+    setSelectedDatasetId(event.target.value);
   };
 
   const horizons = useMemo(
@@ -134,10 +163,11 @@ function App() {
               Kaplan-Meier Survival Dashboard
             </Typography>
             <Stack direction="row" spacing={2} alignItems="center">
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+              <FormControl size="small" sx={{ minWidth: 200 }}>
                 <Select
-                  value={dataSource}
+                  value={selectedDatasetId}
                   onChange={handleSourceChange}
+                  displayEmpty
                   sx={{
                     color: "white",
                     ".MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255, 255, 255, 0.3)" },
@@ -146,13 +176,16 @@ function App() {
                     ".MuiSvgIcon-root": { color: "white" },
                   }}
                 >
-                  <MenuItem value="/data/recommendations.json">Data Source 1</MenuItem>
-                  <MenuItem value="/data/recommendations_v3.json">Data Source 2 (V3)</MenuItem>
+                  {datasets.map((d) => (
+                    <MenuItem key={d.id} value={d.id}>
+                      {d.name}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
               <Chip
                 icon={<ShowChartIcon />}
-                label="Base Mainnet"
+                label={meta?.pair_label || "Base Mainnet"}
                 color="primary"
                 variant="outlined"
                 size="small"
@@ -198,16 +231,29 @@ function App() {
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 3, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
                     <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                      Data Sources
+                      Metadata
                     </Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      <Chip
-                        label={dataSource.split("/").pop()}
-                        size="small"
-                        sx={{ fontFamily: "monospace" }}
-                        color="primary"
-                      />
-                      <Chip label="price.json" size="small" sx={{ fontFamily: "monospace" }} />
+                    <Stack spacing={1}>
+                      {meta ? (
+                        <>
+                          <Box>
+                            <Typography variant="caption" color="text.secondary">
+                              Pair Address
+                            </Typography>
+                            <Typography variant="body2" fontFamily="monospace">
+                              {meta.pair_address}
+                            </Typography>
+                          </Box>
+                          <Stack direction="row" spacing={1}>
+                            <Chip label={meta.pool_type} size="small" color="secondary" variant="outlined" />
+                            <Chip label={meta.pair_label} size="small" color="primary" variant="outlined" />
+                          </Stack>
+                        </>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No metadata available
+                        </Typography>
+                      )}
                     </Stack>
                   </Paper>
                 </Grid>
@@ -216,7 +262,10 @@ function App() {
               {/* Main Content */}
               <Grid container spacing={3}>
                 <Grid item xs={12}>
-                  <PriceChart data={prices} />
+                  <PriceChart
+                    data={prices}
+                    title={meta ? `${meta.pair_label} Price History` : "Price History"}
+                  />
                 </Grid>
               </Grid>
 

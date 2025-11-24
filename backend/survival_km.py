@@ -37,6 +37,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_PREFIX_ENV = os.getenv("CACHE_PREFIX")
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
 USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
+PAIR_LABEL = os.getenv("PAIR_LABEL", "").strip()
+WORKER_INGEST_URL = os.getenv("WORKER_INGEST_URL", "").strip()
+ENABLE_D1_INGEST = os.getenv("ENABLE_D1_INGEST", "false").lower() == "true"
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
@@ -170,15 +173,20 @@ def cache_prefix_for_pair(pair_address: str) -> str:
 def cache_filepath(pair_address: str, lookback_hours: int, sample_interval_sec: int) -> str:
     ensure_cache_dir()
     prefix = cache_prefix_for_pair(pair_address)
-    filename = f"{prefix}_LOOKBACK{lookback_hours}_INTERVAL{sample_interval_sec}.json"
+    filename = f"{prefix}_v2_LOOKBACK{lookback_hours}_INTERVAL{sample_interval_sec}.json"
     return os.path.join(CACHE_DIR, filename)
 
 
 def output_paths(pair_address: str) -> Tuple[str, str]:
     prefix = cache_prefix_for_pair(pair_address)
-    csv_path = os.path.join(BASE_DIR, f"{prefix}_survival.csv")
-    json_path = os.path.join(BASE_DIR, f"{prefix}_recommendations.json")
+    csv_path = os.path.join(BASE_DIR, f"{prefix}_v2_survival.csv")
+    json_path = os.path.join(BASE_DIR, f"{prefix}_v2_recommendations.json")
     return csv_path, json_path
+
+
+def build_meta(pair_address: str) -> Dict[str, str]:
+    label = PAIR_LABEL if PAIR_LABEL else cache_prefix_for_pair(pair_address)
+    return {"pair_label": label, "pair_address": pair_address.lower(), "pool_type": "v2"}
 
 
 def _read_address_from_data(data: str) -> Optional[str]:
@@ -243,7 +251,11 @@ def load_cached_prices(path: str, start_ts: int, end_ts: int) -> pd.DataFrame:
     if not os.path.exists(path):
         return pd.DataFrame()
     try:
-        df = pd.read_json(path, orient="records")
+        loaded = pd.read_json(path)
+        if isinstance(loaded, pd.DataFrame) and "timestamp" in loaded.columns:
+            df = loaded
+        else:
+            df = pd.DataFrame(loaded.get("data", []))  # type: ignore[arg-type]
     except ValueError:
         return pd.DataFrame()
     if df.empty:
@@ -259,7 +271,8 @@ def load_cached_prices(path: str, start_ts: int, end_ts: int) -> pd.DataFrame:
 def save_cached_prices(df: pd.DataFrame, path: str) -> None:
     """Persist price data to cache file as JSON records."""
     ensure_cache_dir()
-    df.to_json(path, orient="records", date_format="iso")
+    payload = {"meta": build_meta(PAIR_ADDRESS), "data": df.to_dict(orient="records")}
+    pd.Series(payload).to_json(path, date_format="iso")
 
 
 def get_price_data(
@@ -494,9 +507,56 @@ def print_recommendations(df: pd.DataFrame) -> None:
         )
         print(f"    percent_range_total: {row['percent_range_total']:.5f}%\n")
 
-def save_recommendations_json(df: pd.DataFrame, path: str) -> None:
+def save_recommendations_json(df: pd.DataFrame, path: str) -> Dict:
     ensure_cache_dir()
-    df.to_json(path, orient="records", date_format="iso")
+    payload = {"meta": build_meta(PAIR_ADDRESS), "data": df.to_dict(orient="records")}
+    pd.Series(payload).to_json(path, date_format="iso")
+    return payload
+
+
+def _serialize_prices(df: pd.DataFrame) -> List[Dict]:
+    records: List[Dict] = []
+    for row in df.to_dict(orient="records"):
+        ts = row.get("timestamp")
+        if hasattr(ts, "isoformat"):
+            ts_str = ts.isoformat()
+        else:
+            ts_str = str(ts)
+        rec: Dict = {"timestamp": ts_str, "price": float(row.get("price", 0))}
+        blk = row.get("block")
+        if blk is not None and not (isinstance(blk, float) and math.isnan(blk)):
+            try:
+                rec["block"] = int(blk)
+            except Exception:  # noqa: BLE001
+                pass
+        records.append(rec)
+    return records
+
+
+def maybe_ingest_to_worker(
+    recs_payload: Dict,
+    price_df: pd.DataFrame,
+    lookback_hours: int,
+    interval_sec: int,
+) -> None:
+    if not ENABLE_D1_INGEST or not WORKER_INGEST_URL:
+        return
+    body = {
+        "pair": PAIR_LABEL or cache_prefix_for_pair(PAIR_ADDRESS),
+        "lookback": lookback_hours,
+        "interval_sec": interval_sec,
+        "generated_at": int(time.time() * 1000),
+        "payload": {
+            "recommendations": recs_payload,
+            "prices": {"meta": build_meta(PAIR_ADDRESS), "data": _serialize_prices(price_df)},
+        },
+    }
+    try:
+        resp = requests.post(WORKER_INGEST_URL, json=body, timeout=15)
+        resp.raise_for_status()
+        print(f"Pushed payload to Worker D1 ({WORKER_INGEST_URL}).")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: failed to push payload to Worker D1: {exc}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -534,8 +594,9 @@ def main() -> None:
     print("Computing survival and recommendations...")
     recs_df = generate_recommendation(df_ticks)
     recs_df.to_csv(csv_output, index=False)
-    save_recommendations_json(recs_df, json_output)
+    recs_payload = save_recommendations_json(recs_df, json_output)
     print(f"Saved recommendations to {csv_output} and {json_output}")
+    maybe_ingest_to_worker(recs_payload, raw_df, LOOKBACK_HOURS, SAMPLE_INTERVAL_SEC)
     print()
     print_recommendations(recs_df)
     total_elapsed = time.time() - start_total

@@ -12,6 +12,7 @@ import type { PricePoint } from "../types";
 
 interface Props {
   data: PricePoint[];
+  title?: string;
 }
 
 const formatDate = (iso: string) =>
@@ -22,13 +23,13 @@ const formatDate = (iso: string) =>
     minute: "2-digit",
   });
 
-export function PriceChart({ data }: Props) {
+export function PriceChart({ data, title = "Price History" }: Props) {
   const theme = useTheme();
 
   return (
     <Card sx={{ height: 450, display: "flex", flexDirection: "column" }}>
       <CardHeader
-        title="WETH/USDbC Price History"
+        title={title}
         subheader="Historical price movement from Aerodrome pool"
         titleTypographyProps={{ variant: "h6", fontWeight: "bold" }}
       />
@@ -68,7 +69,7 @@ export function PriceChart({ data }: Props) {
               />
               <YAxis
                 domain={["auto", "auto"]}
-                tickFormatter={(v) => v.toFixed(0)}
+                tickFormatter={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 tick={{ fill: theme.palette.text.secondary, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}

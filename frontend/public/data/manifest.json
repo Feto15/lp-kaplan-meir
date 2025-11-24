@@ -1,0 +1,16 @@
+{
+  "datasets": [
+    {
+      "id": "weth_usdc_v2",
+      "name": "WETH/USDC V2",
+      "recommendations": "/data/WETH_USDC_v2_recommendations.json",
+      "price": "/data/WETH_USDC_v2_LOOKBACK48_INTERVAL600.json"
+    },
+    {
+      "id": "aero_weth_v3",
+      "name": "AERO/WETH V3",
+      "recommendations": "/data/AERO_WETH_v3_recommendations.json",
+      "price": "/data/AERO_WETH_v3_LOOKBACK48_INTERVAL600.json"
+    }
+  ]
+}

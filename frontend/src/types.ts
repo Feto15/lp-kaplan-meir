@@ -21,3 +21,25 @@ export interface Recommendation {
   price_to: number;
   percent_range_total: number;
 }
+
+export interface RecommendationMeta {
+  pair_label: string;
+  pair_address: string;
+  pool_type: string;
+}
+
+export interface RecommendationResponse {
+  meta?: RecommendationMeta;
+  data: Recommendation[];
+}
+
+export interface Dataset {
+  id: string;
+  name: string;
+  recommendations: string;
+  price: string;
+}
+
+export interface Manifest {
+  datasets: Dataset[];
+}
