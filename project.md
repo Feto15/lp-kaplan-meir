@@ -37,3 +37,16 @@ Hasil CSV tersimpan di `backend/survival_eth_usdc.csv`, JSON rekomendasi di `bac
 cp backend/survival_recommendations.json frontend/public/data/recommendations.json
 cp backend/cache/eth_usdc_prices_LOOKBACK48_INTERVAL600.json frontend/public/data/price.json
 ```
+
+### Pool V3/CL (slot0) – script terpisah
+Untuk pool tipe V3/CL (mis. Pancake/Uniswap V3), gunakan `backend/survival_km_v3.py`:
+```bash
+cd backend
+AERODROME_RPC_URL=https://bsc-dataseed.binance.org \
+AERODROME_PAIR_ADDRESS=0x...pair_v3... \
+CACHE_PREFIX=my_v3_pair \
+LOOKBACK_HOURS=48 SAMPLE_INTERVAL_SEC=600 \
+RPC_BATCH_SIZE=10 RPC_BATCH_SLEEP=0.5 \
+python3 survival_km_v3.py --no-cache
+```
+Output: `backend/survival_eth_usdc_v3.csv`, `backend/survival_recommendations_v3.json`, dan cache `cache/<prefix>_v3_LOOKBACK...json`.
