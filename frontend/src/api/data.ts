@@ -1,7 +1,6 @@
-import Papa from "papaparse";
 import type { PricePoint, Recommendation } from "../types";
 
-const DEFAULT_RECOMMENDATION_URL = "/data/survival_eth_usdc.csv";
+const DEFAULT_RECOMMENDATION_URL = "/data/recommendations.json";
 const DEFAULT_PRICE_URL = "/data/price.json";
 
 const parseNumber = (value: unknown): number => {
@@ -19,16 +18,8 @@ export async function fetchRecommendations(
   if (!res.ok) {
     throw new Error(`Gagal mengambil rekomendasi: ${res.status} ${res.statusText}`);
   }
-  const text = await res.text();
-  const parsed = Papa.parse<Record<string, unknown>>(text, {
-    header: true,
-    dynamicTyping: false,
-    skipEmptyLines: true,
-  });
-  if (parsed.errors.length) {
-    throw new Error(`Parsing CSV error: ${parsed.errors[0].message}`);
-  }
-  return parsed.data
+  const data = (await res.json()) as Array<Record<string, unknown>>;
+  return data
     .map((row) => ({
       W: parseNumber(row.W),
       horizon_hours: parseNumber(row.horizon_hours),

@@ -32,13 +32,14 @@ BATCH_SIZE = int(os.getenv("RPC_BATCH_SIZE", "10"))
 BATCH_SLEEP = float(os.getenv("RPC_BATCH_SLEEP", "0.5"))
 # Prefix nama file cache bisa diubah via env untuk membedakan pair.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CACHE_PREFIX = os.getenv("CACHE_PREFIX", "eth_usdc_prices")
+CACHE_PREFIX_ENV = os.getenv("CACHE_PREFIX")
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
 USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
 CSV_OUTPUT = os.path.join(BASE_DIR, "survival_eth_usdc.csv")
+JSON_OUTPUT = os.path.join(BASE_DIR, "survival_recommendations.json")
 # Cache sederhana untuk mengurangi panggilan RPC berulang pada block/reserves.
 BLOCK_CACHE: Dict[int, Dict] = {}
 RESERVE_CACHE: Dict[int, Tuple[float, float]] = {}
@@ -150,9 +151,17 @@ def ensure_cache_dir() -> None:
     os.makedirs(CACHE_DIR, exist_ok=True)
 
 
-def cache_filepath(lookback_hours: int, sample_interval_sec: int) -> str:
+def cache_prefix_for_pair(pair_address: str) -> str:
+    if CACHE_PREFIX_ENV and CACHE_PREFIX_ENV.strip():
+        return CACHE_PREFIX_ENV.strip()
+    sanitized = pair_address.lower().replace("0x", "")
+    return f"cache_{sanitized[:6]}_{sanitized[-4:]}"
+
+
+def cache_filepath(pair_address: str, lookback_hours: int, sample_interval_sec: int) -> str:
     ensure_cache_dir()
-    filename = f"{CACHE_PREFIX}_LOOKBACK{lookback_hours}_INTERVAL{sample_interval_sec}.json"
+    prefix = cache_prefix_for_pair(pair_address)
+    filename = f"{prefix}_LOOKBACK{lookback_hours}_INTERVAL{sample_interval_sec}.json"
     return os.path.join(CACHE_DIR, filename)
 
 
@@ -192,7 +201,7 @@ def get_price_data(
     """
     pair_address = pair_address.lower()
     use_cache_flag = USE_CACHE_DEFAULT if use_cache is None else use_cache
-    cache_path = cache_filepath(lookback_hours, sample_interval_sec)
+    cache_path = cache_filepath(pair_address, lookback_hours, sample_interval_sec)
     approx_now = int(time.time())
     approx_start_ts = approx_now - lookback_hours * 3600
     cached_df = load_cached_prices(cache_path, approx_start_ts, approx_now)
@@ -410,6 +419,10 @@ def print_recommendations(df: pd.DataFrame) -> None:
         )
         print(f"    percent_range_total: {row['percent_range_total']:.5f}%\n")
 
+def save_recommendations_json(df: pd.DataFrame) -> None:
+    ensure_cache_dir()
+    df.to_json(JSON_OUTPUT, orient="records", date_format="iso")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute survival estimates for price data.")
@@ -430,10 +443,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    start_total = time.time()
     args = parse_args()
     print("Fetching price data from Base RPC...")
+    start_fetch = time.time()
     raw_df = get_price_data(use_cache=args.use_cache)
-    print(f"Fetched {len(raw_df)} rows from RPC sampling/cache")
+    fetch_elapsed = time.time() - start_fetch
+    print(f"Fetched {len(raw_df)} rows from RPC sampling/cache in {fetch_elapsed:.2f} sec")
 
     print("Computing ticks...")
     df_ticks = compute_ticks(raw_df)
@@ -442,9 +458,12 @@ def main() -> None:
     print("Computing survival and recommendations...")
     recs_df = generate_recommendation(df_ticks)
     recs_df.to_csv(CSV_OUTPUT, index=False)
-    print(f"Saved recommendations to {CSV_OUTPUT}")
+    save_recommendations_json(recs_df)
+    print(f"Saved recommendations to {CSV_OUTPUT} and {JSON_OUTPUT}")
     print()
     print_recommendations(recs_df)
+    total_elapsed = time.time() - start_total
+    print(f"Total execution time: {total_elapsed:.2f} sec")
 
 
 if __name__ == "__main__":

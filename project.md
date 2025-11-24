@@ -32,8 +32,8 @@ export AERODROME_RPC_URL="https://mainnet.base.org"
 python3 survival_km.py
 cd ..
 ```
-Hasil CSV tersimpan di `backend/survival_eth_usdc.csv` dan cache di `backend/cache/`. Untuk dipakai FE, salin ke `frontend/public/data/`:
+Hasil CSV tersimpan di `backend/survival_eth_usdc.csv`, JSON rekomendasi di `backend/survival_recommendations.json`, dan cache di `backend/cache/`. Untuk dipakai FE, salin ke `frontend/public/data/`:
 ```bash
-cp backend/survival_eth_usdc.csv frontend/public/data/
+cp backend/survival_recommendations.json frontend/public/data/recommendations.json
 cp backend/cache/eth_usdc_prices_LOOKBACK48_INTERVAL600.json frontend/public/data/price.json
 ```
