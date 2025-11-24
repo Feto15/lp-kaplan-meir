@@ -22,8 +22,8 @@ cd backend
 export AERODROME_RPC_URL="https://mainnet.base.org"
 # opsional: override jika perlu
 # export AERODROME_PAIR_ADDRESS="0xb4885bc63399bf5518b994c1d0c153334ee579d0"
-# export AERODROME_TOKEN0_DECIMALS="18"   # WETH
-# export AERODROME_TOKEN1_DECIMALS="6"    # USDbC
+# export AERODROME_TOKEN0_DECIMALS="18"   # override desimal token0 (auto-detect jika kosong)
+# export AERODROME_TOKEN1_DECIMALS="6"    # override desimal token1 (auto-detect jika kosong)
 # export LOOKBACK_HOURS="48"              # default 48 jam (disarankan 24–72 jam)
 # export SAMPLE_INTERVAL_SEC="600"        # default 10 menit (disarankan 300–600 detik)
 # export RPC_BATCH_SIZE="25"              # jeda setiap N panggilan eth_call

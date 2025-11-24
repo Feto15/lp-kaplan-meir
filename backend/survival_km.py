@@ -17,8 +17,10 @@ PAIR_ADDRESS = os.getenv(
     "AERODROME_PAIR_ADDRESS", "0xb4885bc63399bf5518b994c1d0c153334ee579d0"
 ).lower()
 # Token asumsi (bisa dikonfirmasi via token0/token1).
-TOKEN0_DECIMALS = int(os.getenv("AERODROME_TOKEN0_DECIMALS", "18"))  # WETH
-TOKEN1_DECIMALS = int(os.getenv("AERODROME_TOKEN1_DECIMALS", "6"))   # USDbC
+DEFAULT_TOKEN0_DECIMALS = 18  # WETH
+DEFAULT_TOKEN1_DECIMALS = 6   # USDbC
+TOKEN0_DECIMALS_ENV = os.getenv("AERODROME_TOKEN0_DECIMALS")
+TOKEN1_DECIMALS_ENV = os.getenv("AERODROME_TOKEN1_DECIMALS")
 # Target harga: WETH dalam USDbC => price = reserve1/reserve0 * 10^(dec0-dec1)
 
 # Estimasi block time Base (detik) untuk konversi waktu->block.
@@ -43,6 +45,7 @@ JSON_OUTPUT = os.path.join(BASE_DIR, "survival_recommendations.json")
 # Cache sederhana untuk mengurangi panggilan RPC berulang pada block/reserves.
 BLOCK_CACHE: Dict[int, Dict] = {}
 RESERVE_CACHE: Dict[int, Tuple[float, float]] = {}
+DECIMALS_CACHE: Dict[str, Tuple[int, int]] = {}
 
 
 def rpc_call(method: str, params: List, max_retries: int = 5) -> Dict:
@@ -78,6 +81,14 @@ def rpc_call(method: str, params: List, max_retries: int = 5) -> Dict:
 
 def _hex_to_int(h: str) -> int:
     return int(h, 16)
+
+
+def _call_eth_call(to: str, data: str, block: str = "latest") -> Optional[str]:
+    params = [{"to": to, "data": data}, block]
+    res = rpc_call("eth_call", params)
+    if not res or res == "0x":
+        return None
+    return res
 
 
 def get_block(number: str) -> Dict:
@@ -165,6 +176,63 @@ def cache_filepath(pair_address: str, lookback_hours: int, sample_interval_sec: 
     return os.path.join(CACHE_DIR, filename)
 
 
+def _read_address_from_data(data: str) -> Optional[str]:
+    if not data or len(data) < 66:
+        return None
+    return "0x" + data[-40:]
+
+
+def get_pair_tokens(pair_address: str) -> Tuple[Optional[str], Optional[str]]:
+    pair = pair_address.lower()
+    token0_data = _call_eth_call(pair, "0x0dfe1681")  # token0()
+    token1_data = _call_eth_call(pair, "0xd21220a7")  # token1()
+    return _read_address_from_data(token0_data), _read_address_from_data(token1_data)
+
+
+def get_token_decimals(token_address: str) -> Optional[int]:
+    data = _call_eth_call(token_address.lower(), "0x313ce567")  # decimals()
+    if not data or len(data) < 66:
+        return None
+    try:
+        return int(data[2:66], 16)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def resolve_decimals(pair_address: str) -> Tuple[int, int]:
+    """Resolve token decimals via env override or on-chain introspection."""
+    pair = pair_address.lower()
+    if pair in DECIMALS_CACHE:
+        return DECIMALS_CACHE[pair]
+
+    dec0 = None
+    dec1 = None
+    # Env override if provided
+    try:
+        if TOKEN0_DECIMALS_ENV is not None:
+            dec0 = int(TOKEN0_DECIMALS_ENV)
+    except ValueError:
+        dec0 = None
+    try:
+        if TOKEN1_DECIMALS_ENV is not None:
+            dec1 = int(TOKEN1_DECIMALS_ENV)
+    except ValueError:
+        dec1 = None
+
+    # Auto-detect from chain
+    token0_addr, token1_addr = get_pair_tokens(pair)
+    if dec0 is None and token0_addr:
+        dec0 = get_token_decimals(token0_addr)
+    if dec1 is None and token1_addr:
+        dec1 = get_token_decimals(token1_addr)
+
+    # Fallback to defaults if detection fails
+    dec0 = dec0 if dec0 is not None else DEFAULT_TOKEN0_DECIMALS
+    dec1 = dec1 if dec1 is not None else DEFAULT_TOKEN1_DECIMALS
+    DECIMALS_CACHE[pair] = (dec0, dec1)
+    return dec0, dec1
+
+
 def load_cached_prices(path: str, start_ts: int, end_ts: int) -> pd.DataFrame:
     """Load cached price data between start_ts and end_ts (inclusive)."""
     if not os.path.exists(path):
@@ -200,6 +268,8 @@ def get_price_data(
     Mengambil harga WETH/USDbC: price = reserve1/reserve0 * 10^(dec0-dec1).
     """
     pair_address = pair_address.lower()
+    dec0, dec1 = resolve_decimals(pair_address)
+    print(f"Using token decimals: token0={dec0}, token1={dec1}")
     use_cache_flag = USE_CACHE_DEFAULT if use_cache is None else use_cache
     cache_path = cache_filepath(pair_address, lookback_hours, sample_interval_sec)
     approx_now = int(time.time())
@@ -232,7 +302,7 @@ def get_price_data(
         if reserves:
             r0, r1 = reserves
             if r0 > 0 and r1 > 0:
-                price = (r1 / r0) * 10 ** (TOKEN0_DECIMALS - TOKEN1_DECIMALS)
+                price = (r1 / r0) * 10 ** (dec0 - dec1)
                 records.append(
                     {
                         "timestamp": pd.to_datetime(target_ts, unit="s", utc=True),
