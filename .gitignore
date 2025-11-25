@@ -45,3 +45,6 @@ backend/*_recommendations*.json
 
 # Wrangler
 .wrangler/
+
+# Documentation
+command.txt
