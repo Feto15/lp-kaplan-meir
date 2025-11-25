@@ -15,7 +15,6 @@ import {
   ThemeProvider,
   Toolbar,
   Typography,
-  useMediaQuery,
 } from "@mui/material";
 import Grid from "@mui/material/GridLegacy";
 import { useEffect, useMemo, useState } from "react";
@@ -29,7 +28,6 @@ import ShowChartIcon from "@mui/icons-material/ShowChart";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 
 function App() {
-  const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [meta, setMeta] = useState<RecommendationMeta | undefined>(undefined);

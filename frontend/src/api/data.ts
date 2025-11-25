@@ -1,4 +1,4 @@
-import type { Manifest, PricePoint, PriceResponse, Recommendation, RecommendationResponse } from "../types";
+import type { Manifest, PriceResponse, RecommendationResponse } from "../types";
 
 const DEFAULT_RECOMMENDATION_URL = "/data/recommendations.json";
 const DEFAULT_PRICE_URL = "/data/price.json";
