@@ -39,6 +39,9 @@ export interface Dataset {
   name: string;
   recommendations: string;
   price: string;
+  pair?: string;
+  lookback?: number;
+  interval_sec?: number;
 }
 
 export interface Manifest {

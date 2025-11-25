@@ -3,14 +3,20 @@
     {
       "id": "weth_usdc_v2",
       "name": "WETH/USDC V2",
-      "recommendations": "/latest?pair=WETH_USDC&interval_sec=600&kind=recommendations",
-      "price": "/latest?pair=WETH_USDC&interval_sec=600&kind=prices"
+      "recommendations": "/latest_survival?pair=WETH_USDC&lookback=72&interval_sec=600",
+      "price": "/latest_survival?pair=WETH_USDC&lookback=72&interval_sec=600",
+      "pair": "WETH_USDC",
+      "lookback": 72,
+      "interval_sec": 600
     },
     {
       "id": "aero_weth_v3",
       "name": "AERO/WETH V3",
-      "recommendations": "/latest?pair=AERO_WETH&interval_sec=600&kind=recommendations",
-      "price": "/latest?pair=AERO_WETH&interval_sec=600&kind=prices"
+      "recommendations": "/latest_survival?pair=AERO_WETH&lookback=48&interval_sec=600",
+      "price": "/latest_survival?pair=AERO_WETH&lookback=48&interval_sec=600",
+      "pair": "AERO_WETH",
+      "lookback": 48,
+      "interval_sec": 600
     }
   ]
 }

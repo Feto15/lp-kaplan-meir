@@ -40,6 +40,7 @@ USE_CACHE_DEFAULT = os.getenv("USE_CACHE", "false").lower() == "true"
 PAIR_LABEL = os.getenv("PAIR_LABEL", "").strip()
 WORKER_INGEST_URL = os.getenv("WORKER_INGEST_URL", "").strip()
 ENABLE_D1_INGEST = os.getenv("ENABLE_D1_INGEST", "false").lower() == "true"
+WORKER_BASE_URL = os.getenv("WORKER_BASE_URL", "").strip()
 
 WINDOWS = [100, 200, 300, 500]
 HORIZONS = [6, 12, 24, 48]
@@ -280,6 +281,7 @@ def get_price_data(
     lookback_hours: int = LOOKBACK_HOURS,
     sample_interval_sec: int = SAMPLE_INTERVAL_SEC,
     use_cache: Optional[bool] = None,
+    worker_base_url: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Ambil data harga historis via RPC dengan sampling interval tetap.
@@ -297,15 +299,36 @@ def get_price_data(
         print(f"Loading price data from cache: {cache_path}")
         return cached_df.reset_index(drop=True)
 
+    last_ts: Optional[int] = None
+    if worker_base_url:
+        try:
+            resp = requests.get(f"{worker_base_url.rstrip('/')}/last_ts", params={"pair": cache_prefix_for_pair(pair_address)}, timeout=10)
+            if resp.ok:
+                data = resp.json()
+                last_ts = int(data.get("last_ts"))
+                print(f"Found last_ts from D1 via Worker: {last_ts}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: failed to fetch last_ts from Worker: {exc}")
+
     latest_num, latest_ts = get_latest_block()
     records: List[Dict] = []
     now = latest_ts
     start_ts = now - lookback_hours * 3600
+    if last_ts and last_ts < now:
+        # Align to interval grid
+        aligned = last_ts + sample_interval_sec
+        if aligned < start_ts:
+            target_ts = start_ts
+        else:
+            target_ts = aligned
+        start_ts = min(start_ts, target_ts)
+    else:
+        target_ts = start_ts
+
     cached_df = load_cached_prices(cache_path, start_ts, now)
     if not cached_df.empty:
         print(f"Using cached history to minimize RPC calls ({len(cached_df)} rows)")
 
-    target_ts = start_ts
     call_counter = 0
     existing_ts: set[int] = set()
     if not cached_df.empty:
@@ -533,6 +556,45 @@ def _serialize_prices(df: pd.DataFrame) -> List[Dict]:
     return records
 
 
+def _serialize_prices_numeric_ts(df: pd.DataFrame) -> List[Dict]:
+    """Serialize price rows with numeric epoch milliseconds for incremental append."""
+    records: List[Dict] = []
+    for row in df.to_dict(orient="records"):
+        ts = row.get("timestamp")
+        ts_num: Optional[int] = None
+        if hasattr(ts, "timestamp"):
+            ts_num = int(ts.timestamp() * 1000)
+        else:
+            try:
+                ts_num = int(pd.to_datetime(ts).timestamp() * 1000)
+            except Exception:  # noqa: BLE001
+                ts_num = None
+        if ts_num is None:
+            continue
+        rec: Dict = {"ts": ts_num, "price": float(row.get("price", 0))}
+        blk = row.get("block")
+        if blk is not None and not (isinstance(blk, float) and math.isnan(blk)):
+            try:
+                rec["block"] = int(blk)
+            except Exception:  # noqa: BLE001
+                pass
+        records.append(rec)
+    return records
+
+
+def _worker_base_url() -> Optional[str]:
+    if WORKER_BASE_URL:
+        return WORKER_BASE_URL.rstrip("/")
+    if WORKER_INGEST_URL:
+        return WORKER_INGEST_URL.rstrip("/").rsplit("/", 1)[0]
+    return None
+
+
+def _post_worker(url: str, payload: Dict, timeout: int = 15) -> None:
+    resp = requests.post(url, json=payload, timeout=timeout)
+    resp.raise_for_status()
+
+
 def maybe_ingest_to_worker(
     recs_payload: Dict,
     price_df: pd.DataFrame,
@@ -541,8 +603,11 @@ def maybe_ingest_to_worker(
 ) -> None:
     if not ENABLE_D1_INGEST or not WORKER_INGEST_URL:
         return
+    base_url = _worker_base_url()
+    pair_label = PAIR_LABEL or cache_prefix_for_pair(PAIR_ADDRESS)
+
     body = {
-        "pair": PAIR_LABEL or cache_prefix_for_pair(PAIR_ADDRESS),
+        "pair": pair_label,
         "lookback": lookback_hours,
         "interval_sec": interval_sec,
         "generated_at": int(time.time() * 1000),
@@ -552,11 +617,37 @@ def maybe_ingest_to_worker(
         },
     }
     try:
-        resp = requests.post(WORKER_INGEST_URL, json=body, timeout=15)
-        resp.raise_for_status()
-        print(f"Pushed payload to Worker D1 ({WORKER_INGEST_URL}).")
+        _post_worker(WORKER_INGEST_URL, body)
+        print(f"Pushed payload to Worker D1 (legacy ingest) {WORKER_INGEST_URL}.")
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: failed to push payload to Worker D1: {exc}")
+        print(f"Warning: failed to push payload to Worker D1 (legacy ingest): {exc}")
+
+    if not base_url:
+        return
+
+    try:
+        price_rows = _serialize_prices_numeric_ts(price_df)
+        if price_rows:
+            _post_worker(f"{base_url}/append_prices", {"pair": pair_label, "rows": price_rows})
+            print(f"Appended {len(price_rows)} price rows to D1 via Worker.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: failed to append prices to D1: {exc}")
+
+    try:
+        survival_payload = {
+          "pair": pair_label,
+          "lookback": lookback_hours,
+          "interval_sec": interval_sec,
+          "generated_at": int(time.time() * 1000),
+          "payload": {
+              "recommendations": recs_payload,
+              "prices": {"meta": build_meta(PAIR_ADDRESS), "data": _serialize_prices(price_df)},
+          },
+        }
+        _post_worker(f"{base_url}/ingest_survival", survival_payload)
+        print(f"Pushed survival payload to Worker D1 ({base_url}/ingest_survival).")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: failed to push survival payload to Worker D1: {exc}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -583,7 +674,7 @@ def main() -> None:
     csv_output, json_output = output_paths(PAIR_ADDRESS)
     print("Fetching price data from Base RPC...")
     start_fetch = time.time()
-    raw_df = get_price_data(use_cache=args.use_cache)
+    raw_df = get_price_data(use_cache=args.use_cache, worker_base_url=WORKER_BASE_URL)
     fetch_elapsed = time.time() - start_fetch
     print(f"Fetched {len(raw_df)} rows from RPC sampling/cache in {fetch_elapsed:.2f} sec")
 

@@ -19,7 +19,7 @@ import {
 import Grid from "@mui/material/GridLegacy";
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { fetchManifest, fetchPrices, fetchRecommendations } from "./api/data";
+import { fetchManifest, fetchPrices, fetchRecommendations, fetchSurvivalFromWorker } from "./api/data";
 import { PriceChart } from "./components/PriceChart";
 import { RecommendationsTable } from "./components/RecommendationsTable";
 import { SurvivalChart } from "./components/SurvivalChart";
@@ -124,17 +124,33 @@ function App() {
         const dataset = datasets.find((d) => d.id === selectedDatasetId);
         if (!dataset) throw new Error("Dataset not found");
 
-        const [recResponse, priceResponse] = await Promise.all([
-          fetchRecommendations(dataset.recommendations),
-          fetchPrices(dataset.price),
-        ]);
-        setRecs(recResponse.data);
-        setMeta(recResponse.meta);
-        setPrices(priceResponse.data);
-        const recUpdated = recResponse.generatedAt ?? 0;
-        const priceUpdated = priceResponse.generatedAt ?? 0;
-        const maxUpdated = Math.max(recUpdated, priceUpdated);
-        setLastUpdated(maxUpdated > 0 ? maxUpdated : null);
+        const canUseSurvival = Boolean(dataset.pair && dataset.lookback && dataset.interval_sec);
+        if (canUseSurvival) {
+          const surv = await fetchSurvivalFromWorker(
+            dataset.pair!,
+            dataset.lookback ?? 0,
+            dataset.interval_sec ?? 0
+          );
+          setRecs(surv.recommendations.data);
+          setMeta(surv.recommendations.meta);
+          setPrices(surv.prices.data);
+          const recUpdated = surv.recommendations.generatedAt ?? 0;
+          const priceUpdated = surv.prices.generatedAt ?? 0;
+          const maxUpdated = Math.max(recUpdated, priceUpdated, surv.generatedAt ?? 0);
+          setLastUpdated(maxUpdated > 0 ? maxUpdated : null);
+        } else {
+          const [recResponse, priceResponse] = await Promise.all([
+            fetchRecommendations(dataset.recommendations),
+            fetchPrices(dataset.price),
+          ]);
+          setRecs(recResponse.data);
+          setMeta(recResponse.meta);
+          setPrices(priceResponse.data);
+          const recUpdated = recResponse.generatedAt ?? 0;
+          const priceUpdated = priceResponse.generatedAt ?? 0;
+          const maxUpdated = Math.max(recUpdated, priceUpdated);
+          setLastUpdated(maxUpdated > 0 ? maxUpdated : null);
+        }
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Gagal memuat data");

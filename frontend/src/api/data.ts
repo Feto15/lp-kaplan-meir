@@ -3,6 +3,7 @@ import type { Manifest, PriceResponse, RecommendationResponse } from "../types";
 const DEFAULT_RECOMMENDATION_URL = "/data/recommendations.json";
 const DEFAULT_PRICE_URL = "/data/price.json";
 const DATA_BASE = (import.meta.env.VITE_DATA_BASE || "").replace(/\/+$/, "");
+const WORKER_BASE = (import.meta.env.VITE_WORKER_BASE || "").replace(/\/+$/, "");
 
 const resolveUrl = (path: string): string => {
   if (!path) return path;
@@ -112,4 +113,101 @@ export async function fetchPrices(
     .filter((row) => row.timestamp && Number.isFinite(row.price));
 
   return { data, generatedAt };
+}
+
+// Fetch survival payload from Worker D1 when configured, fallback to static files otherwise.
+export async function fetchSurvivalFromWorker(
+  pair: string,
+  lookback: number,
+  intervalSec: number,
+): Promise<{ recommendations: RecommendationResponse; prices: PriceResponse; generatedAt?: number }> {
+  if (!WORKER_BASE) {
+    // Fallback: emulate legacy static behaviour
+    const recommendations = await fetchRecommendations();
+    const prices = await fetchPrices();
+    return { recommendations, prices, generatedAt: recommendations.generatedAt ?? prices.generatedAt };
+  }
+
+  const params = new URLSearchParams({
+    pair,
+    lookback: String(lookback),
+    interval_sec: String(intervalSec),
+  });
+  try {
+    const res = await fetch(`${WORKER_BASE}/latest_survival?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(`Gagal mengambil survival dari Worker: ${res.status} ${res.statusText}`);
+    }
+    const generatedAtHeader = res.headers.get("x-generated-at");
+    const generatedAt = generatedAtHeader ? Number(generatedAtHeader) : undefined;
+    const json = await res.json();
+
+    // Expecting payload shape: { recommendations, prices }
+    const recPayload = json.recommendations ?? json;
+    const pricePayload = json.prices ?? {};
+
+    const recommendations = await fetchRecommendationsFromPayload(recPayload);
+    const prices = await fetchPricesFromPayload(pricePayload);
+
+    return { recommendations, prices, generatedAt };
+  } catch (err) {
+    // Fallback to static sources if Worker fails (e.g., 404 not yet ingested)
+    const recommendations = await fetchRecommendations();
+    const prices = await fetchPrices();
+    return { recommendations, prices, generatedAt: recommendations.generatedAt ?? prices.generatedAt };
+  }
+}
+
+async function fetchRecommendationsFromPayload(payload: unknown): Promise<RecommendationResponse> {
+  let rawData: Array<Record<string, unknown>> = [];
+  let meta: RecommendationResponse["meta"] = undefined;
+
+  if (Array.isArray(payload)) {
+    rawData = payload as Array<Record<string, unknown>>;
+  } else if (typeof payload === "object" && payload !== null && "data" in payload) {
+    rawData = (payload as { data: Array<Record<string, unknown>> }).data;
+    meta = (payload as { meta: RecommendationResponse["meta"] }).meta;
+  }
+
+  const data = rawData
+    .map((row) => ({
+      W: parseNumber(row.W),
+      horizon_hours: parseNumber(row.horizon_hours),
+      status: String(row.status ?? ""),
+      reason: String(row.reason ?? ""),
+      count_total: parseNumber(row.count_total),
+      count_full_followup: parseNumber(row.count_full_followup),
+      empirical_full: parseNumber(row.empirical_full),
+      km_surv: parseNumber(row.km_surv),
+      km_ci_low: parseNumber(row.km_ci_low),
+      km_ci_high: parseNumber(row.km_ci_high),
+      tick_from: parseNumber(row.tick_from),
+      tick_to: parseNumber(row.tick_to),
+      price_from: parseNumber(row.price_from),
+      price_to: parseNumber(row.price_to),
+      percent_range_total: parseNumber(row.percent_range_total),
+    }))
+    .filter((row) => Number.isFinite(row.W) && Number.isFinite(row.horizon_hours));
+
+  return { meta, data };
+}
+
+async function fetchPricesFromPayload(payload: unknown): Promise<PriceResponse> {
+  let rawData: Array<Record<string, unknown>> = [];
+
+  if (Array.isArray(payload)) {
+    rawData = payload as Array<Record<string, unknown>>;
+  } else if (typeof payload === "object" && payload !== null && "data" in payload) {
+    rawData = (payload as { data: Array<Record<string, unknown>> }).data;
+  }
+
+  const data = rawData
+    .map((row) => ({
+      timestamp: String(row.timestamp ?? ""),
+      price: parseNumber(row.price),
+      block: row.block ? Number(row.block) : undefined,
+    }))
+    .filter((row) => row.timestamp && Number.isFinite(row.price));
+
+  return { data };
 }
