@@ -1,0 +1,13 @@
+# Python artifacts and local data
+__pycache__/
+*.pyc
+.venv/
+
+# Local env files
+.env*
+
+# Generated data/cache
+cache/
+*.csv
+*_recommendations*.json
+*_survival*.csv
