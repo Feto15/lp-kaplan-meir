@@ -1,0 +1,132 @@
+name: Cron Ingest & Compute
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # Orca snapshot every 10 minutes
+    - cron: "15 * * * *"     # AERO_WETH ingest hourly (minute 15)
+    - cron: "20 * * * *"     # WETH_USDC ingest hourly (minute 20)
+    - cron: "30 * * * *"     # AERO_WETH compute hourly (minute 30)
+    - cron: "40 * * * *"     # WETH_USDC compute hourly (minute 40)
+  workflow_dispatch: {}
+
+jobs:
+  orca_ingest:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/10 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Ingest Orca price snapshot
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          PAIR_LABEL: SOL_USDC_ORCA
+          ORCA_WHIRLPOOL_ADDRESS: ${{ secrets.ORCA_WHIRLPOOL_ADDRESS }}
+        run: |
+          cd backend
+          python3 ingest_orca_price.py
+
+  aero_ingest:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Ingest EVM prices (AERO_WETH v3)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v3
+          PAIR_LABEL: AERO_WETH
+          AERODROME_PAIR_ADDRESS: ${{ secrets.AERO_WETH_V3_ADDRESS }}
+          LOOKBACK_HOURS: 48
+          SAMPLE_INTERVAL_SEC: 600
+          RPC_BATCH_SIZE: 100
+          RPC_BATCH_SLEEP: 0.5
+        run: |
+          cd backend
+          python3 ingest_prices.py
+
+  weth_ingest:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '20 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Ingest EVM prices (WETH_USDC v2)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v2
+          PAIR_LABEL: WETH_USDC
+          AERODROME_PAIR_ADDRESS: ${{ secrets.WETH_USDC_V2_ADDRESS }}
+          LOOKBACK_HOURS: 72
+          SAMPLE_INTERVAL_SEC: 600
+          RPC_BATCH_SIZE: 100
+          RPC_BATCH_SLEEP: 0.5
+        run: |
+          cd backend
+          python3 ingest_prices.py
+
+  aero_compute:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Compute survival (AERO_WETH v3)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v3
+          PAIR_LABEL: AERO_WETH
+          AERODROME_PAIR_ADDRESS: ${{ secrets.AERO_WETH_V3_ADDRESS }}
+          LOOKBACK_HOURS: 48
+          SAMPLE_INTERVAL_SEC: 600
+        run: |
+          cd backend
+          python3 compute_survival_from_prices.py
+
+  weth_compute:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '40 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Compute survival (WETH_USDC v2)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v2
+          PAIR_LABEL: WETH_USDC
+          AERODROME_PAIR_ADDRESS: ${{ secrets.WETH_USDC_V2_ADDRESS }}
+          LOOKBACK_HOURS: 72
+          SAMPLE_INTERVAL_SEC: 600
+        run: |
+          cd backend
+          python3 compute_survival_from_prices.py

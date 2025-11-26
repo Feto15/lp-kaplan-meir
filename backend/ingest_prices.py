@@ -69,6 +69,7 @@ def fetch_prices() -> pd.DataFrame:
         sample_interval_sec=SAMPLE_INTERVAL_SEC,
         use_cache=None,  # ikuti USE_CACHE_DEFAULT dari util
         worker_base_url=base_url,
+        pair_label=label,
     )
 
 

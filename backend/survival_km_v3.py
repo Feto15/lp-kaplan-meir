@@ -265,6 +265,7 @@ def get_price_data(
     use_cache: Optional[bool] = None,
     invert_price: bool = False,
     worker_base_url: Optional[str] = None,
+    pair_label: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Ambil data harga historis via RPC (slot0) dengan sampling interval tetap.
@@ -289,9 +290,10 @@ def get_price_data(
     last_ts: Optional[int] = None
     if worker_base_url:
         try:
+            pair_for_last = pair_label if pair_label else cache_prefix_for_pair(pair_address)
             resp = requests.get(
                 f"{worker_base_url.rstrip('/')}/last_ts",
-                params={"pair": cache_prefix_for_pair(pair_address)},
+                params={"pair": pair_for_last},
                 timeout=10,
             )
             if resp.ok:
