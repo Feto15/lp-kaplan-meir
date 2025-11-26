@@ -5,8 +5,10 @@ on:
     - cron: "*/10 * * * *"   # Orca snapshot every 10 minutes
     - cron: "15 * * * *"     # AERO_WETH ingest hourly (minute 15)
     - cron: "20 * * * *"     # WETH_USDC ingest hourly (minute 20)
+    - cron: "25 * * * *"     # VIRTUAL_WETH ingest hourly (minute 25)
     - cron: "30 * * * *"     # AERO_WETH compute hourly (minute 30)
-    - cron: "40 * * * *"     # WETH_USDC compute hourly (minute 40)
+    - cron: "35 * * * *"     # WETH_USDC compute hourly (minute 35)
+    - cron: "40 * * * *"     # VIRTUAL_WETH compute hourly (minute 40)
   workflow_dispatch: {}
 
 jobs:
@@ -108,7 +110,7 @@ jobs:
           python3 compute_survival_from_prices.py
 
   weth_compute:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '40 * * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '35 * * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +128,56 @@ jobs:
           PAIR_LABEL: WETH_USDC
           AERODROME_PAIR_ADDRESS: ${{ secrets.WETH_USDC_V2_ADDRESS }}
           LOOKBACK_HOURS: 72
+          SAMPLE_INTERVAL_SEC: 600
+        run: |
+          cd backend
+          python3 compute_survival_from_prices.py
+
+  virtual_ingest:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '25 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Ingest EVM prices (VIRTUAL_WETH v3)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v3
+          PAIR_LABEL: VIRTUAL_WETH
+          AERODROME_PAIR_ADDRESS: 0x3f0296bf652e19bca772ec3df08b32732f93014a
+          LOOKBACK_HOURS: 48
+          SAMPLE_INTERVAL_SEC: 600
+          RPC_BATCH_SIZE: 100
+          RPC_BATCH_SLEEP: 0.5
+        run: |
+          cd backend
+          python3 ingest_prices.py
+
+  virtual_compute:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '40 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Compute survival (VIRTUAL_WETH v3)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v3
+          PAIR_LABEL: VIRTUAL_WETH
+          AERODROME_PAIR_ADDRESS: 0x3f0296bf652e19bca772ec3df08b32732f93014a
+          LOOKBACK_HOURS: 48
           SAMPLE_INTERVAL_SEC: 600
         run: |
           cd backend

@@ -96,6 +96,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [isBalanceChecked, setIsBalanceChecked] = useState<boolean>(false);
 
   // Load manifest first
   useEffect(() => {
@@ -114,6 +115,11 @@ function App() {
     void loadManifest();
   }, []);
 
+  useEffect(() => {
+    const isChecked = window.localStorage.getItem("isCheckBalance");
+    setIsBalanceChecked(Boolean(isChecked));
+  }, []);
+
   // Load data when selected dataset changes
   useEffect(() => {
     if (!selectedDatasetId) return;
@@ -125,6 +131,16 @@ function App() {
         if (!dataset) throw new Error("Dataset not found");
 
         const canUseSurvival = Boolean(dataset.pair && dataset.lookback && dataset.interval_sec);
+        // Construct meta from manifest if available
+        const manifestMeta: RecommendationMeta | undefined =
+          dataset.pair_label && dataset.pair_address && dataset.pool_type
+            ? {
+                pair_label: dataset.pair_label,
+                pair_address: dataset.pair_address,
+                pool_type: dataset.pool_type,
+              }
+            : undefined;
+
         if (canUseSurvival) {
           const surv = await fetchSurvivalFromWorker(
             dataset.pair!,
@@ -132,7 +148,7 @@ function App() {
             dataset.interval_sec ?? 0
           );
           setRecs(surv.recommendations.data);
-          setMeta(surv.recommendations.meta);
+          setMeta(manifestMeta || surv.recommendations.meta);
           setPrices(surv.prices.data);
           const recUpdated = surv.recommendations.generatedAt ?? 0;
           const priceUpdated = surv.prices.generatedAt ?? 0;
@@ -144,7 +160,7 @@ function App() {
             fetchPrices(dataset.price),
           ]);
           setRecs(recResponse.data);
-          setMeta(recResponse.meta);
+          setMeta(manifestMeta || recResponse.meta);
           setPrices(priceResponse.data);
           const recUpdated = recResponse.generatedAt ?? 0;
           const priceUpdated = priceResponse.generatedAt ?? 0;
@@ -162,6 +178,8 @@ function App() {
   }, [selectedDatasetId, datasets]);
 
   const handleSourceChange = (event: SelectChangeEvent) => {
+    window.localStorage.setItem("isCheckBalance", "true");
+    setIsBalanceChecked(true);
     setSelectedDatasetId(event.target.value);
   };
 

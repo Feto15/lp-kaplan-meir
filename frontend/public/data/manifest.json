@@ -7,16 +7,34 @@
       "price": "/latest_survival?pair=WETH_USDC&lookback=72&interval_sec=600",
       "pair": "WETH_USDC",
       "lookback": 72,
-      "interval_sec": 600
+      "interval_sec": 600,
+      "pair_address": "0xb4885bc63399bf5518b994c1d0c153334ee579d0",
+      "pair_label": "WETH_USDC",
+      "pool_type": "v2"
     },
     {
       "id": "aero_weth_v3",
       "name": "AERO/WETH V3",
       "recommendations": "/latest_survival?pair=AERO_WETH&lookback=48&interval_sec=600",
-      "price": "/latest_survival?pair=AERO_WETH&lookback=48&interval_sec=600",
+      "price": "/latest_survival?pair=AERO_WETH&lookback=72&interval_sec=600",
       "pair": "AERO_WETH",
       "lookback": 72,
-      "interval_sec": 600
+      "interval_sec": 600,
+      "pair_address": "0x82321f3beb69f503380d6b233857d5c43562e2d0",
+      "pair_label": "AERO_WETH",
+      "pool_type": "v3"
+    },
+    {
+      "id": "virtual_weth_v3",
+      "name": "VIRTUAL/WETH V3",
+      "recommendations": "/latest_survival?pair=VIRTUAL_WETH&lookback=72&interval_sec=600",
+      "price": "/latest_survival?pair=VIRTUAL_WETH&lookback=72&interval_sec=600",
+      "pair": "VIRTUAL_WETH",
+      "lookback": 72,
+      "interval_sec": 600,
+      "pair_address": "0x3f0296bf652e19bca772ec3df08b32732f93014a",
+      "pair_label": "VIRTUAL_WETH",
+      "pool_type": "v3"
     }
   ]
 }

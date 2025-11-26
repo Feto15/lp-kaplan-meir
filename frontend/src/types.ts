@@ -42,6 +42,9 @@ export interface Dataset {
   pair?: string;
   lookback?: number;
   interval_sec?: number;
+  pair_address?: string;
+  pair_label?: string;
+  pool_type?: string;
 }
 
 export interface Manifest {
