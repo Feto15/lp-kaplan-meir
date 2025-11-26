@@ -15,7 +15,7 @@
       "recommendations": "/latest_survival?pair=AERO_WETH&lookback=48&interval_sec=600",
       "price": "/latest_survival?pair=AERO_WETH&lookback=48&interval_sec=600",
       "pair": "AERO_WETH",
-      "lookback": 48,
+      "lookback": 72,
       "interval_sec": 600
     }
   ]

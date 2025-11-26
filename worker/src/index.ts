@@ -159,6 +159,47 @@ app.get('/last_ts', async c => {
   return jsonResponse(JSON.stringify({ last_ts: Number(last) }));
 });
 
+// Fetch historical prices for a pair (optionally bounded by start_ts/end_ts, in ms).
+app.get('/prices', async c => {
+  const pair = c.req.query('pair');
+  const startParam = c.req.query('start_ts');
+  const endParam = c.req.query('end_ts');
+  if (!pair) {
+    return new Response('pair required', { status: 400, headers: corsHeaders });
+  }
+
+  const startTs = startParam != null ? Number(startParam) : Number.NaN;
+  const endTs = endParam != null ? Number(endParam) : Number.NaN;
+
+  let sql = 'SELECT ts, price, block FROM prices WHERE pair = ?';
+  const binds: Array<string | number> = [pair];
+  if (!Number.isNaN(startTs)) {
+    sql += ' AND ts >= ?';
+    binds.push(startTs);
+  }
+  if (!Number.isNaN(endTs) && endTs > 0) {
+    sql += ' AND ts <= ?';
+    binds.push(endTs);
+  }
+  sql += ' ORDER BY ts ASC';
+
+  const { results } = await c.env.DB.prepare(sql)
+    .bind(...binds)
+    .all();
+
+  if (!results.length) {
+    return new Response('not found', { status: 404, headers: corsHeaders });
+  }
+
+  const data = results.map(r => ({
+    timestamp: new Date(Number(r.ts)).toISOString(),
+    price: Number(r.price),
+    block: r.block != null ? Number(r.block) : undefined,
+  }));
+  const lastTs = Number(results[results.length - 1]?.ts ?? 0);
+  return jsonResponse(JSON.stringify({ data }), 200, { 'x-generated-at': String(lastTs) });
+});
+
 // Ingest precomputed survival/recommendation payload keyed by lookback+interval.
 app.post('/ingest_survival', async c => {
   let body: any;
