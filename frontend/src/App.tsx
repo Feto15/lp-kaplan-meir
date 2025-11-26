@@ -96,7 +96,6 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [isBalanceChecked, setIsBalanceChecked] = useState<boolean>(false);
 
   // Load manifest first
   useEffect(() => {
@@ -113,11 +112,6 @@ function App() {
       }
     };
     void loadManifest();
-  }, []);
-
-  useEffect(() => {
-    const isChecked = window.localStorage.getItem("isCheckBalance");
-    setIsBalanceChecked(Boolean(isChecked));
   }, []);
 
   // Load data when selected dataset changes
@@ -178,8 +172,6 @@ function App() {
   }, [selectedDatasetId, datasets]);
 
   const handleSourceChange = (event: SelectChangeEvent) => {
-    window.localStorage.setItem("isCheckBalance", "true");
-    setIsBalanceChecked(true);
     setSelectedDatasetId(event.target.value);
   };
 
