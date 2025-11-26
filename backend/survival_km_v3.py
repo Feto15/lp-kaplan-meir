@@ -287,7 +287,7 @@ def get_price_data(
         print(f"Loading price data from cache: {cache_path}")
         return cached_df.reset_index(drop=True)
 
-    last_ts: Optional[int] = None
+    last_ts_sec: Optional[int] = None
     if worker_base_url:
         try:
             pair_for_last = pair_label if pair_label else cache_prefix_for_pair(pair_address)
@@ -298,8 +298,9 @@ def get_price_data(
             )
             if resp.ok:
                 data = resp.json()
-                last_ts = int(data.get("last_ts"))
-                print(f"Found last_ts from D1 via Worker: {last_ts}")
+                last_raw = int(data.get("last_ts"))
+                last_ts_sec = int(last_raw / 1000) if last_raw > 1e12 else last_raw
+                print(f"Found last_ts from D1 via Worker: {last_raw} (sec={last_ts_sec})")
         except Exception as exc:  # noqa: BLE001
             print(f"Warning: failed to fetch last_ts from Worker: {exc}")
 
@@ -307,8 +308,8 @@ def get_price_data(
     records: List[Dict] = []
     now = latest_ts
     start_ts = now - lookback_hours * 3600
-    if last_ts and last_ts < now:
-        aligned = last_ts + sample_interval_sec
+    if last_ts_sec and last_ts_sec < now:
+        aligned = last_ts_sec + sample_interval_sec
         target_ts = aligned if aligned >= start_ts else start_ts
         start_ts = min(start_ts, target_ts)
     else:
