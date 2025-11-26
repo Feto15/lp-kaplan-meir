@@ -166,7 +166,9 @@ async function fetchRecommendationsFromPayload(payload: unknown): Promise<Recomm
     rawData = payload as Array<Record<string, unknown>>;
   } else if (typeof payload === "object" && payload !== null && "data" in payload) {
     rawData = (payload as { data: Array<Record<string, unknown>> }).data;
-    meta = (payload as { meta: RecommendationResponse["meta"] }).meta;
+    if ("meta" in payload) {
+      meta = (payload as { meta?: RecommendationResponse["meta"] }).meta;
+    }
   }
 
   const data = rawData
