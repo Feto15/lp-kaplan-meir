@@ -22,6 +22,12 @@ interface Props {
   data: Recommendation[];
 }
 
+const formatPrice = (val: number) => {
+  if (val === 0) return "0";
+  if (val < 1) return val.toPrecision(4);
+  return val.toFixed(2);
+};
+
 export function RecommendationsTable({ data }: Props) {
   const theme = useTheme();
   const sorted = [...data].sort((a, b) => {
@@ -88,7 +94,7 @@ export function RecommendationsTable({ data }: Props) {
                   <TableCell>
                     <Box sx={{ display: "flex", flexDirection: "column" }}>
                       <Typography variant="body2">
-                        {row.price_from.toFixed(2)} - {row.price_to.toFixed(2)}
+                        {formatPrice(row.price_from)} - {formatPrice(row.price_to)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {row.percent_range_total.toFixed(2)}%
