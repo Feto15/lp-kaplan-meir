@@ -538,8 +538,26 @@ def print_recommendations(df: pd.DataFrame) -> None:
 
 def save_recommendations_json(df: pd.DataFrame, path: str) -> Dict:
     ensure_cache_dir()
-    payload = {"meta": build_meta(PAIR_ADDRESS), "data": df.to_dict(orient="records")}
-    pd.Series(payload).to_json(path, date_format="iso")
+    # Clean NaN/Infinity values before converting to dict
+    df_clean = df.replace([np.inf, -np.inf], np.nan)
+    df_clean = df_clean.where(pd.notnull(df_clean), None)
+    records = []
+    for row in df_clean.to_dict(orient="records"):
+        cleaned_row = {}
+        for key, value in row.items():
+            if isinstance(value, (int, float)):
+                if value is not None and (np.isnan(value) or np.isinf(value)):
+                    cleaned_row[key] = None
+                else:
+                    cleaned_row[key] = value
+            else:
+                cleaned_row[key] = value
+        records.append(cleaned_row)
+    payload = {"meta": build_meta(PAIR_ADDRESS), "data": records}
+    # Use json.dumps to ensure proper NaN handling
+    import json
+    with open(path, 'w') as f:
+        json.dump(payload, f, allow_nan=False, default=str)
     return payload
 
 

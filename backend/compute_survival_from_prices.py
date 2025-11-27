@@ -106,8 +106,22 @@ def dataframe_to_records(df: pd.DataFrame) -> List[Dict]:
     clean = df.replace([np.inf, -np.inf], np.nan)
     # Drop rows that still have NaN in critical numeric fields.
     clean = clean.dropna(subset=["km_surv", "km_ci_low", "km_ci_high", "price_from", "price_to", "percent_range_total"])
+    # Replace NaN values with None (JSON null) for all fields
     clean = clean.where(pd.notnull(clean), None)
-    return clean.to_dict(orient="records")
+    # Convert to records and ensure all numeric values are finite
+    records = []
+    for row in clean.to_dict(orient="records"):
+        cleaned_row = {}
+        for key, value in row.items():
+            if isinstance(value, (int, float)):
+                if np.isnan(value) or np.isinf(value):
+                    cleaned_row[key] = None
+                else:
+                    cleaned_row[key] = value
+            else:
+                cleaned_row[key] = value
+        records.append(cleaned_row)
+    return records
 
 
 def push_survival_to_worker(pair_label: str, lookback_hours: int, interval_sec: int, payload: Dict) -> None:
