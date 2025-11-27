@@ -257,7 +257,7 @@ function App() {
               {/* Summary Cards */}
               <Box>
                 <Grid container spacing={{ xs: 2, md: 3 }}>
-                  <Grid item xs={12} sm={6} md={3}>
+                  <Grid item xs={12} sm={6} md={3} sx={{ order: { xs: 1, md: 1 } }}>
                     <Paper sx={{ p: 2, height: "100%" }}>
                       <Typography color="text.secondary" variant="subtitle2" gutterBottom>
                         Total Recommendations
@@ -267,7 +267,7 @@ function App() {
                       </Typography>
                     </Paper>
                   </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
+                  <Grid item xs={12} sm={6} md={3} sx={{ order: { xs: 2, md: 2 } }}>
                     <Paper sx={{ p: 2, height: "100%" }}>
                       <Typography color="text.secondary" variant="subtitle2" gutterBottom>
                         Accepted Strategies
@@ -277,7 +277,7 @@ function App() {
                       </Typography>
                     </Paper>
                   </Grid>
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} md={6} sx={{ order: { xs: 3, md: 3 } }}>
                     <Paper sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
                       <Typography color="text.secondary" variant="subtitle2" gutterBottom>
                         Metadata
