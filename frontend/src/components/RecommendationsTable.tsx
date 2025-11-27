@@ -36,11 +36,11 @@ export function RecommendationsTable({ data }: Props) {
         subheader="Analysis based on survival probability"
         titleTypographyProps={{ variant: "h6", fontWeight: "bold" }}
       />
-      <TableContainer>
-        <Table size="small">
+      <TableContainer sx={{ overflowX: "auto" }}>
+        <Table size="small" sx={{ minWidth: 650 }}>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Horizon</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold", pl: 2 }}>Horizon</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Window (W)</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Status</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Survival Prob.</TableCell>
@@ -62,7 +62,7 @@ export function RecommendationsTable({ data }: Props) {
                     bgcolor: isAccepted ? "rgba(16, 185, 129, 0.04)" : "transparent",
                   }}
                 >
-                  <TableCell sx={{ fontWeight: "medium" }}>{row.horizon_hours}h</TableCell>
+                  <TableCell sx={{ fontWeight: "medium", pl: 2 }}>{row.horizon_hours}h</TableCell>
                   <TableCell>{row.W}</TableCell>
                   <TableCell>
                     <Chip

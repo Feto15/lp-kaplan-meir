@@ -20,6 +20,7 @@ import time
 from typing import Dict, List
 
 import pandas as pd
+import numpy as np
 import requests
 
 from survival_km import compute_ticks, generate_recommendation
@@ -97,7 +98,7 @@ def serialize_prices_iso(df: pd.DataFrame) -> List[Dict]:
 
 
 def dataframe_to_records(df: pd.DataFrame) -> List[Dict]:
-    clean = df.where(pd.notnull(df), None)
+    clean = df.replace([np.inf, -np.inf], np.nan).where(pd.notnull(df), None)
     return clean.to_dict(orient="records")
 
 

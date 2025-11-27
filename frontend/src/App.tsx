@@ -186,13 +186,20 @@ function App() {
       <CssBaseline />
       <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
         <AppBar position="static" color="transparent" elevation={0} sx={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-          <Toolbar>
-            <DashboardIcon sx={{ mr: 2, color: "primary.main" }} />
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: "bold" }}>
-              Kaplan-Meier Survival Dashboard
-            </Typography>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <FormControl size="small" sx={{ minWidth: 200 }}>
+          <Toolbar sx={{ flexWrap: "wrap", py: 1 }}>
+            <Box display="flex" alignItems="center" sx={{ flexGrow: 1, mr: 2, minWidth: 280 }}>
+              <DashboardIcon sx={{ mr: 2, color: "primary.main" }} />
+              <Typography variant="h6" component="div" sx={{ fontWeight: "bold" }}>
+                Kaplan-Meier Survival Dashboard
+              </Typography>
+            </Box>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", sm: "center" }}
+              sx={{ width: { xs: "100%", sm: "auto" }, mt: { xs: 2, sm: 0 } }}
+            >
+              <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 200 } }}>
                 <Select
                   value={selectedDatasetId}
                   onChange={handleSourceChange}
@@ -212,27 +219,30 @@ function App() {
                   ))}
                 </Select>
               </FormControl>
-              <Chip
-                icon={<ShowChartIcon />}
-                label={meta?.pair_label || "Base Mainnet"}
-                color="primary"
-                variant="outlined"
-                size="small"
-              />
-              {lastUpdated && (
+              <Stack direction="row" spacing={1} alignItems="center">
                 <Chip
-                  label={`Updated: ${new Date(lastUpdated).toLocaleString()}`}
-                  color="secondary"
+                  icon={<ShowChartIcon />}
+                  label={meta?.pair_label || "Base Mainnet"}
+                  color="primary"
                   variant="outlined"
                   size="small"
-                  sx={{ ml: 1 }}
+                  sx={{ flexGrow: 1 }}
                 />
-              )}
+                {lastUpdated && (
+                  <Chip
+                    label={`Updated: ${new Date(lastUpdated).toLocaleString()}`}
+                    color="secondary"
+                    variant="outlined"
+                    size="small"
+                    sx={{ flexGrow: 1 }}
+                  />
+                )}
+              </Stack>
             </Stack>
           </Toolbar>
         </AppBar>
 
-        <Container maxWidth="xl" sx={{ py: 4, flex: 1 }}>
+        <Container maxWidth="xl" sx={{ py: { xs: 2, md: 4 }, px: { xs: 3, md: 4 }, flex: 1 }}>
           {loading ? (
             <Box display="flex" alignItems="center" justifyContent="center" minHeight="60vh">
               <CircularProgress size={60} thickness={4} />
@@ -243,75 +253,85 @@ function App() {
               <Typography>{error}</Typography>
             </Paper>
           ) : (
-            <Stack spacing={4}>
+            <Stack spacing={{ xs: 3, md: 4 }}>
               {/* Summary Cards */}
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Paper sx={{ p: 3, height: "100%" }}>
-                    <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                      Total Recommendations
-                    </Typography>
-                    <Typography variant="h3" fontWeight="bold">
-                      {recs.length}
-                    </Typography>
-                  </Paper>
+              <Box>
+                <Grid container spacing={{ xs: 2, md: 3 }}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{ p: 2, height: "100%" }}>
+                      <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                        Total Recommendations
+                      </Typography>
+                      <Typography variant="h3" fontWeight="bold">
+                        {recs.length}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Paper sx={{ p: 2, height: "100%" }}>
+                      <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                        Accepted Strategies
+                      </Typography>
+                      <Typography variant="h3" fontWeight="bold" color="success.main">
+                        {accepted}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                      <Typography color="text.secondary" variant="subtitle2" gutterBottom>
+                        Metadata
+                      </Typography>
+                      <Stack spacing={1}>
+                        {meta ? (
+                          <>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">
+                                Pair Address
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                fontFamily="monospace"
+                                sx={{ wordBreak: "break-all" }}
+                              >
+                                {meta.pair_address}
+                              </Typography>
+                            </Box>
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>
+                              <Chip label={meta.pool_type} size="small" color="secondary" variant="outlined" />
+                              <Chip label={meta.pair_label} size="small" color="primary" variant="outlined" />
+                            </Stack>
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            No metadata available
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Paper>
+                  </Grid>
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <Paper sx={{ p: 3, height: "100%" }}>
-                    <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                      Accepted Strategies
-                    </Typography>
-                    <Typography variant="h3" fontWeight="bold" color="success.main">
-                      {accepted}
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Paper sx={{ p: 3, height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                    <Typography color="text.secondary" variant="subtitle2" gutterBottom>
-                      Metadata
-                    </Typography>
-                    <Stack spacing={1}>
-                      {meta ? (
-                        <>
-                          <Box>
-                            <Typography variant="caption" color="text.secondary">
-                              Pair Address
-                            </Typography>
-                            <Typography variant="body2" fontFamily="monospace">
-                              {meta.pair_address}
-                            </Typography>
-                          </Box>
-                          <Stack direction="row" spacing={1}>
-                            <Chip label={meta.pool_type} size="small" color="secondary" variant="outlined" />
-                            <Chip label={meta.pair_label} size="small" color="primary" variant="outlined" />
-                          </Stack>
-                        </>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          No metadata available
-                        </Typography>
-                      )}
-                    </Stack>
-                  </Paper>
-                </Grid>
-              </Grid>
+              </Box>
 
               {/* Main Content */}
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <PriceChart
-                    data={prices}
-                    title={meta ? `${meta.pair_label} Price History` : "Price History"}
-                  />
+              <Box>
+                <Grid container spacing={{ xs: 2, md: 3 }}>
+                  <Grid item xs={12}>
+                    <PriceChart
+                      data={prices}
+                      title={meta ? `${meta.pair_label} Price History` : "Price History"}
+                    />
+                  </Grid>
                 </Grid>
-              </Grid>
+              </Box>
 
               <Box>
-                <Typography variant="h5" gutterBottom sx={{ mb: 3, fontWeight: "bold" }}>
-                  Survival Analysis by Horizon
-                </Typography>
-                <Grid container spacing={3}>
+                <Grid container spacing={{ xs: 2, md: 3 }}>
+                  <Grid item xs={12}>
+                    <Typography variant="h5" gutterBottom sx={{ fontWeight: "bold" }}>
+                      Survival Analysis by Horizon
+                    </Typography>
+                  </Grid>
                   {horizons.map((h) => (
                     <Grid item xs={12} md={6} xl={3} key={h}>
                       <SurvivalChart horizon={h} data={recs} />
@@ -320,11 +340,13 @@ function App() {
                 </Grid>
               </Box>
 
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <RecommendationsTable data={recs} />
+              <Box>
+                <Grid container spacing={{ xs: 2, md: 3 }}>
+                  <Grid item xs={12}>
+                    <RecommendationsTable data={recs} />
+                  </Grid>
                 </Grid>
-              </Grid>
+              </Box>
             </Stack>
           )}
         </Container>
