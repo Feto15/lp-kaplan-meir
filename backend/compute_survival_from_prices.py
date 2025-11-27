@@ -19,8 +19,8 @@ import os
 import time
 from typing import Dict, List
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import requests
 
 from survival_km import compute_ticks, generate_recommendation
@@ -82,11 +82,16 @@ def fetch_prices_from_worker(pair_label: str, lookback_hours: int) -> pd.DataFra
 
 
 def serialize_prices_iso(df: pd.DataFrame) -> List[Dict]:
+    # Drop/clean non-finite prices before serialization.
+    df_clean = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["price"])
     records: List[Dict] = []
-    for row in df.to_dict(orient="records"):
+    for row in df_clean.to_dict(orient="records"):
         ts = row.get("timestamp")
         ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
-        rec: Dict = {"timestamp": ts_str, "price": float(row.get("price", 0))}
+        price_val = row.get("price", 0)
+        if price_val is None or not np.isfinite(price_val):
+            continue
+        rec: Dict = {"timestamp": ts_str, "price": float(price_val)}
         blk = row.get("block")
         if blk is not None and not (isinstance(blk, float) and pd.isna(blk)):
             try:
