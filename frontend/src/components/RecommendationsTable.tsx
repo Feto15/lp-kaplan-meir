@@ -44,8 +44,8 @@ export function RecommendationsTable({ data }: Props) {
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Window (W)</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Status</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Survival Prob.</TableCell>
-              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Sample Size</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Price Range</TableCell>
+              <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }}>Sample Size</TableCell>
               <TableCell sx={{ bgcolor: "background.paper", fontWeight: "bold" }} align="center">
                 Info
               </TableCell>
@@ -87,19 +87,19 @@ export function RecommendationsTable({ data }: Props) {
                   </TableCell>
                   <TableCell>
                     <Box sx={{ display: "flex", flexDirection: "column" }}>
-                      <Typography variant="body2">{row.count_total} total</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {row.count_full_followup} full
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ display: "flex", flexDirection: "column" }}>
                       <Typography variant="body2">
                         {row.price_from.toFixed(2)} - {row.price_to.toFixed(2)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {row.percent_range_total.toFixed(2)}%
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: "flex", flexDirection: "column" }}>
+                      <Typography variant="body2">{row.count_total} total</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {row.count_full_followup} full
                       </Typography>
                     </Box>
                   </TableCell>
