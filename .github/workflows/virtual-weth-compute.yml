@@ -1,0 +1,33 @@
+name: VIRTUAL_WETH Compute
+
+on:
+  schedule:
+    - cron: "40 * * * *"  # Hourly at minute 40
+  workflow_dispatch:
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      
+      - name: Compute survival for VIRTUAL_WETH (v3 pool)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v3
+          PAIR_LABEL: VIRTUAL_WETH
+          AERODROME_PAIR_ADDRESS: ${{ secrets.VIRTUAL_WETH_V3_ADDRESS }}
+          LOOKBACK_HOURS: 48
+          SAMPLE_INTERVAL_SEC: 600
+        run: |
+          cd backend
+          python3 compute_survival_from_prices.py

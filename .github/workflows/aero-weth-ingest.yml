@@ -1,0 +1,35 @@
+name: AERO_WETH Ingest
+
+on:
+  schedule:
+    - cron: "15 * * * *"  # Hourly at minute 15
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      
+      - name: Ingest AERO_WETH prices (v3 pool)
+        env:
+          WORKER_BASE_URL: ${{ secrets.WORKER_BASE_URL }}
+          POOL_TYPE: v3
+          PAIR_LABEL: AERO_WETH
+          AERODROME_PAIR_ADDRESS: ${{ secrets.AERO_WETH_V3_ADDRESS }}
+          LOOKBACK_HOURS: 48
+          SAMPLE_INTERVAL_SEC: 600
+          RPC_BATCH_SIZE: 100
+          RPC_BATCH_SLEEP: 0.5
+        run: |
+          cd backend
+          python3 ingest_prices.py
