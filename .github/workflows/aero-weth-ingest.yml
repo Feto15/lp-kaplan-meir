@@ -28,8 +28,10 @@ jobs:
           AERODROME_PAIR_ADDRESS: ${{ secrets.AERO_WETH_V3_ADDRESS }}
           LOOKBACK_HOURS: 48
           SAMPLE_INTERVAL_SEC: 600
-          RPC_BATCH_SIZE: 100
-          RPC_BATCH_SLEEP: 0.5
+          # Conservative rate limit settings for public RPC
+          RPC_BATCH_SIZE: 5
+          RPC_BATCH_SLEEP: 3.0
+          RPC_CALL_DELAY: 0.5
         run: |
           cd backend
           python3 ingest_prices.py

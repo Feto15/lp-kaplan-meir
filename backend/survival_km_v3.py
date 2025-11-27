@@ -26,8 +26,10 @@ INVERT_PRICE = os.getenv("INVERT_PRICE", "false").lower() == "true"
 BASE_BLOCK_TIME_SEC = float(os.getenv("BASE_BLOCK_TIME_SEC", "2"))
 LOOKBACK_HOURS = int(os.getenv("LOOKBACK_HOURS", "48"))
 SAMPLE_INTERVAL_SEC = int(os.getenv("SAMPLE_INTERVAL_SEC", "600"))
-BATCH_SIZE = int(os.getenv("RPC_BATCH_SIZE", "10"))
-BATCH_SLEEP = float(os.getenv("RPC_BATCH_SLEEP", "0.5"))
+# More conservative defaults for public RPC rate limits
+BATCH_SIZE = int(os.getenv("RPC_BATCH_SIZE", "5"))  # Smaller batches
+BATCH_SLEEP = float(os.getenv("RPC_BATCH_SLEEP", "2.0"))  # Longer sleep between batches
+RPC_CALL_DELAY = float(os.getenv("RPC_CALL_DELAY", "0.3"))  # Delay between individual RPC calls
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_PREFIX_ENV = os.getenv("CACHE_PREFIX")
@@ -46,31 +48,49 @@ SLOT0_CACHE: Dict[int, int] = {}
 DECIMALS_CACHE: Dict[str, Tuple[int, int]] = {}
 
 
-def rpc_call(method: str, params: List, max_retries: int = 5) -> Dict:
+def rpc_call(method: str, params: List, max_retries: int = 8) -> Dict:
+    """Make RPC call with exponential backoff for rate limiting."""
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     last_error = None
+    
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(RPC_URL, headers=headers, json=payload, timeout=20)
+            # Add small delay before each call to avoid rate limits
+            if attempt > 1:
+                # Exponential backoff: 2, 4, 8, 16, 32, 64, 128 seconds
+                backoff = min(2 ** attempt, 120)  # Cap at 2 minutes
+                print(f"[RPC] Rate limited, waiting {backoff}s before retry {attempt}/{max_retries}...")
+                time.sleep(backoff)
+            
+            resp = requests.post(RPC_URL, headers=headers, json=payload, timeout=30)
             resp.raise_for_status()
             data = resp.json()
             if "error" in data:
                 raise RuntimeError(data["error"])
+            
+            # Small delay after successful call to be nice to public RPC
+            time.sleep(RPC_CALL_DELAY)
             return data["result"]
-        except requests.HTTPError as exc:  # type: ignore[attr-defined]
+            
+        except requests.HTTPError as exc:
             last_error = exc
             status = getattr(exc.response, "status_code", None)
             if status == 429 and attempt < max_retries:
-                time.sleep(1.5 ** (attempt - 1))
+                # Rate limited - will retry with backoff
                 continue
+            if status == 429:
+                print(f"[RPC] Rate limit exceeded after {max_retries} retries")
             raise
+            
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt >= max_retries:
                 break
-            time.sleep(1.5 ** (attempt - 1))
-    raise RuntimeError(f"RPC call failed after retries: {last_error}")
+            # Also backoff on other errors
+            time.sleep(min(2 ** attempt, 60))
+            
+    raise RuntimeError(f"RPC call failed after {max_retries} retries: {last_error}")
 
 
 def _hex_to_int(h: str) -> int:
