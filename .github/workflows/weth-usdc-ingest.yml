@@ -26,7 +26,7 @@ jobs:
           POOL_TYPE: v2
           PAIR_LABEL: WETH_USDC
           AERODROME_PAIR_ADDRESS: ${{ secrets.WETH_USDC_V2_ADDRESS }}
-          LOOKBACK_HOURS: 72
+          LOOKBACK_HOURS: 48
           SAMPLE_INTERVAL_SEC: 600
           RPC_BATCH_SIZE: 100
           RPC_BATCH_SLEEP: 0.5
