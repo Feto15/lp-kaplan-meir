@@ -355,12 +355,24 @@ def get_price_data(
         df_parts.append(pd.DataFrame(records))
 
     df = pd.concat(df_parts, ignore_index=True) if df_parts else pd.DataFrame()
+    
+    # Ensure we have the required columns
+    if not df.empty and "timestamp" not in df.columns:
+        print(f"[ERROR] DataFrame missing 'timestamp' column. Available columns: {list(df.columns)}")
+        raise RuntimeError("DataFrame missing required 'timestamp' column")
+    
     df = df.dropna()
-    df = df.sort_values("timestamp").reset_index(drop=True)
+    if not df.empty:
+        df = df.sort_values("timestamp").reset_index(drop=True)
+    
     if df.empty:
         raise RuntimeError("Tidak ada data harga yang berhasil diambil dari RPC.")
-    save_cached_prices(df, cache_path)
-    print(f"Saved updated price data to cache: {cache_path}")
+    
+    # Only save if we have valid data with timestamp column
+    if "timestamp" in df.columns:
+        save_cached_prices(df, cache_path)
+        print(f"Saved updated price data to cache: {cache_path}")
+    
     return df
 
 
@@ -547,8 +559,16 @@ def _serialize_prices(df: pd.DataFrame) -> List[Dict]:
 def _serialize_prices_numeric_ts(df: pd.DataFrame) -> List[Dict]:
     """Serialize price rows with numeric epoch milliseconds for incremental append."""
     records: List[Dict] = []
+    # Check if DataFrame has required columns
+    if df.empty or "timestamp" not in df.columns:
+        print(f"[WARNING] DataFrame missing timestamp column or empty. Columns: {list(df.columns) if not df.empty else 'empty'}")
+        return records
+    
     for row in df.to_dict(orient="records"):
         ts = row.get("timestamp")
+        if ts is None:
+            continue
+            
         ts_num: Optional[int] = None
         if hasattr(ts, "timestamp"):
             ts_num = int(ts.timestamp() * 1000)
