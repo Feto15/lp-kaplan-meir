@@ -103,7 +103,10 @@ def serialize_prices_iso(df: pd.DataFrame) -> List[Dict]:
 
 
 def dataframe_to_records(df: pd.DataFrame) -> List[Dict]:
-    clean = df.replace([np.inf, -np.inf], np.nan).where(pd.notnull(df), None)
+    clean = df.replace([np.inf, -np.inf], np.nan)
+    # Drop rows that still have NaN in critical numeric fields.
+    clean = clean.dropna(subset=["km_surv", "km_ci_low", "km_ci_high", "price_from", "price_to", "percent_range_total"])
+    clean = clean.where(pd.notnull(clean), None)
     return clean.to_dict(orient="records")
 
 
